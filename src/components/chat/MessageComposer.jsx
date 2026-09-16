@@ -14,14 +14,14 @@ export function MessageComposer({
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const textareaRef = useRef(null);
 
-  // Auto resize textarea (guaranteeing single-line slim height when empty)
+  // Auto resize textarea (guaranteeing single-line slim height when empty with full descender clearance)
   useEffect(() => {
     if (textareaRef.current) {
       if (!text) {
-        textareaRef.current.style.height = '22px';
+        textareaRef.current.style.height = '26px';
       } else {
         textareaRef.current.style.height = 'auto';
-        textareaRef.current.style.height = `${Math.min(Math.max(textareaRef.current.scrollHeight, 22), 100)}px`;
+        textareaRef.current.style.height = `${Math.min(Math.max(textareaRef.current.scrollHeight, 26), 100)}px`;
       }
     }
   }, [text]);
