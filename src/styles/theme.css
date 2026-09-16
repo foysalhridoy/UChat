@@ -1,47 +1,47 @@
 :root {
-  /* Light Theme Palette - Authentic Telegram Day */
-  --bg-primary: #e6ebee;
+  /* Light Theme Palette — Premium Violet/Indigo */
+  --bg-primary: #f5f6fa;
   --bg-secondary: #ffffff;
-  --bg-tertiary: #f1f1f2;
+  --bg-tertiary: #f0f1f8;
   --bg-elevated: #ffffff;
-  --bg-hover: #f1f1f2;
-  --bg-active: #e4e4e5;
-  
-  --border-subtle: #dfe1e5;
-  --border-strong: #c8ccd0;
-  --border-focus: #3390ec;
+  --bg-hover: #ebebf5;
+  --bg-active: #ddddf0;
 
-  --text-primary: #000000;
-  --text-secondary: #707579;
-  --text-muted: #a2acb4;
+  --border-subtle: #e4e5f0;
+  --border-strong: #c8cae0;
+  --border-focus: #6366f1;
+
+  --text-primary: #0d0f24;
+  --text-secondary: #4a4d6a;
+  --text-muted: #9496b4;
   --text-inverse: #ffffff;
 
-  --primary: #3390ec;
-  --primary-hover: #2481cc;
-  --primary-subtle: rgba(51, 144, 236, 0.12);
-  --primary-text: #2481cc;
+  --primary: #5b5ef4;
+  --primary-hover: #4647d9;
+  --primary-subtle: rgba(91, 94, 244, 0.1);
+  --primary-text: #4647d9;
 
-  --bubble-outgoing: #eeffde;
-  --bubble-outgoing-text: #000000;
-  --bubble-outgoing-meta: #4fae4e;
-  --bubble-outgoing-seen: #4fae4e;
-  
+  --bubble-outgoing: #5b5ef4;
+  --bubble-outgoing-text: #ffffff;
+  --bubble-outgoing-meta: rgba(255, 255, 255, 0.72);
+  --bubble-outgoing-seen: rgba(255, 255, 255, 0.9);
+
   --bubble-incoming: #ffffff;
-  --bubble-incoming-text: #000000;
-  --bubble-incoming-meta: #a2acb4;
-  --bubble-incoming-border: #dfe1e5;
+  --bubble-incoming-text: #0d0f24;
+  --bubble-incoming-meta: #9496b4;
+  --bubble-incoming-border: #e4e5f0;
 
-  --online: #4fae4e;
-  --offline: #a2acb4;
-  --error: #e53935;
-  --error-bg: #fef2f2;
-  --warning: #f5a623;
-  --success: #4fae4e;
+  --online: #22c55e;
+  --offline: #9496b4;
+  --error: #ef4444;
+  --error-bg: #fff1f1;
+  --warning: #f59e0b;
+  --success: #22c55e;
 
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.07);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.08);
-  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.06);
+  --shadow-md: 0 4px 8px -2px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+  --shadow-lg: 0 10px 20px -4px rgb(0 0 0 / 0.09), 0 4px 8px -4px rgb(0 0 0 / 0.06);
+  --shadow-xl: 0 20px 32px -6px rgb(0 0 0 / 0.12), 0 8px 12px -6px rgb(0 0 0 / 0.07);
 
   --radius-sm: 6px;
   --radius-md: 10px;
@@ -55,47 +55,48 @@
 }
 
 [data-theme="dark"] {
-  /* Dark Theme Palette - Authentic Telegram Night */
-  --bg-primary: #0e1621;
-  --bg-secondary: #17212b;
-  --bg-tertiary: #242f3d;
-  --bg-elevated: #242f3d;
-  --bg-hover: #202b36;
-  --bg-active: #2b5278;
+  /* Dark Theme Palette — Premium Deep Midnight */
+  --bg-primary: #080b18;
+  --bg-secondary: #0e1225;
+  --bg-tertiary: #161b30;
+  --bg-elevated: #1c2240;
+  --bg-hover: #1e2440;
+  --bg-active: #252c4a;
 
-  --border-subtle: #101921;
-  --border-strong: #242f3d;
-  --border-focus: #3390ec;
+  --border-subtle: #1a2038;
+  --border-strong: #252c4a;
+  --border-focus: #818cf8;
 
-  --text-primary: #f5f5f5;
-  --text-secondary: #7f91a4;
-  --text-muted: #6c7883;
-  --text-inverse: #0e1621;
+  --text-primary: #edf0ff;
+  --text-secondary: #9ba3c2;
+  --text-muted: #5a6280;
+  --text-inverse: #080b18;
 
-  --primary: #3390ec;
-  --primary-hover: #2481cc;
-  --primary-subtle: rgba(51, 144, 236, 0.16);
-  --primary-text: #64b5f6;
+  --primary: #6c6ff7;
+  --primary-hover: #5b5ef4;
+  --primary-subtle: rgba(108, 111, 247, 0.16);
+  --primary-text: #a5b4fc;
 
-  --bubble-outgoing: #2b5278;
+  --bubble-outgoing: #5b5ef4;
   --bubble-outgoing-text: #ffffff;
-  --bubble-outgoing-meta: rgba(255, 255, 255, 0.65);
-  --bubble-outgoing-seen: #64b5f6;
+  --bubble-outgoing-meta: rgba(255, 255, 255, 0.6);
+  --bubble-outgoing-seen: rgba(255, 255, 255, 0.85);
 
-  --bubble-incoming: #182533;
-  --bubble-incoming-text: #ffffff;
-  --bubble-incoming-meta: #7f91a4;
-  --bubble-incoming-border: #1e2c3a;
+  --bubble-incoming: #161b30;
+  --bubble-incoming-text: #edf0ff;
+  --bubble-incoming-meta: #5a6280;
+  --bubble-incoming-border: #1a2038;
 
-  --online: #4fae4e;
-  --offline: #6c7883;
+  --online: #4ade80;
+  --offline: #5a6280;
   --error: #f87171;
-  --error-bg: rgba(239, 68, 68, 0.15);
-  --warning: #f5a623;
-  --success: #4fae4e;
+  --error-bg: rgba(239, 68, 68, 0.12);
+  --warning: #fbbf24;
+  --success: #4ade80;
 
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.4);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.5);
-  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.6);
+  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.35);
+  --shadow-md: 0 4px 8px -2px rgb(0 0 0 / 0.45), 0 2px 4px -2px rgb(0 0 0 / 0.3);
+  --shadow-lg: 0 10px 20px -4px rgb(0 0 0 / 0.55), 0 4px 8px -4px rgb(0 0 0 / 0.35);
+  --shadow-xl: 0 20px 32px -6px rgb(0 0 0 / 0.65), 0 8px 12px -6px rgb(0 0 0 / 0.4);
 }
+
