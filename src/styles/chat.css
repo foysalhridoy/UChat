@@ -305,7 +305,7 @@
 }
 
 .message-row.outgoing .message-bubble {
-  background: linear-gradient(135deg, var(--bubble-outgoing), #7DA0CA);
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
   color: var(--bubble-outgoing-text);
   border-radius: 18px 18px 4px 18px;
 }

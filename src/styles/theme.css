@@ -77,10 +77,10 @@
   --primary-subtle: rgba(84, 131, 179, 0.18);
   --primary-text: #7DA0CA;
 
-  --bubble-outgoing: #5483B3;
+  --bubble-outgoing: #4f46e5;
   --bubble-outgoing-text: #ffffff;
-  --bubble-outgoing-meta: rgba(193, 232, 255, 0.65);
-  --bubble-outgoing-seen: #C1E8FF;
+  --bubble-outgoing-meta: rgba(255, 255, 255, 0.68);
+  --bubble-outgoing-seen: rgba(255, 255, 255, 0.92);
 
   --bubble-incoming: #161b22;
   --bubble-incoming-text: #e6edf3;
