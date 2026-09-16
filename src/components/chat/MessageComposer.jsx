@@ -1,21 +1,18 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { SendHorizonal, Smile, Image as ImageIcon, X } from 'lucide-react';
+import { SendHorizonal, Smile } from 'lucide-react';
 
 const COMMON_EMOJIS = ['😊', '👍', '❤️', '🔥', '😂', '🎉', '👋', '✨'];
 
 export function MessageComposer({
   onSendMessage,
-  onSendImage,
   onTyping,
   disabled = false,
   placeholder = 'Type a message...'
 }) {
   const [text, setText] = useState('');
-  const [selectedImage, setSelectedImage] = useState(null); // { file, previewUrl, name }
   const [sending, setSending] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const textareaRef = useRef(null);
-  const fileInputRef = useRef(null);
 
   // Auto resize textarea
   useEffect(() => {
@@ -25,48 +22,15 @@ export function MessageComposer({
     }
   }, [text]);
 
-  const handleFileChange = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      alert('Please select an image file');
-      return;
-    }
-    const previewUrl = URL.createObjectURL(file);
-    setSelectedImage({
-      file,
-      previewUrl,
-      name: file.name
-    });
-    e.target.value = '';
-    if (textareaRef.current) {
-      textareaRef.current.focus();
-    }
-  };
-
-  const handleClearImage = () => {
-    if (selectedImage?.previewUrl) {
-      URL.revokeObjectURL(selectedImage.previewUrl);
-    }
-    setSelectedImage(null);
-  };
-
   const handleSend = async (e) => {
     if (e) e.preventDefault();
     const trimmed = text.trim();
-    if ((!trimmed && !selectedImage) || sending || disabled) return;
+    if (!trimmed || sending || disabled) return;
 
     try {
       setSending(true);
       setShowEmojiPicker(false);
-
-      if (selectedImage && onSendImage) {
-        await onSendImage(selectedImage.file, trimmed);
-        handleClearImage();
-      } else if (trimmed && onSendMessage) {
-        await onSendMessage(trimmed);
-      }
-
+      await onSendMessage(trimmed);
       setText('');
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto';
@@ -109,43 +73,10 @@ export function MessageComposer({
     }
   };
 
-  const canSend = (text.trim().length > 0 || selectedImage !== null) && !sending && !disabled;
+  const canSend = text.trim().length > 0 && !sending && !disabled;
 
   return (
     <div className="message-composer-wrapper">
-      {/* Hidden file input for photos */}
-      <input
-        type="file"
-        ref={fileInputRef}
-        onChange={handleFileChange}
-        accept="image/*"
-        style={{ display: 'none' }}
-        aria-hidden="true"
-      />
-
-      {/* Selected Image Thumbnail Preview Tray */}
-      {selectedImage && (
-        <div className="composer-image-preview">
-          <div className="composer-image-thumb-wrapper">
-            <img
-              src={selectedImage.previewUrl}
-              alt="Preview"
-              className="composer-image-thumb"
-            />
-            <button
-              type="button"
-              className="composer-image-remove-btn"
-              onClick={handleClearImage}
-              title="Remove photo"
-              aria-label="Remove photo"
-            >
-              <X size={14} />
-            </button>
-          </div>
-          <span className="composer-image-name">{selectedImage.name}</span>
-        </div>
-      )}
-
       {/* Quick emoji popover */}
       {showEmojiPicker && (
         <div
@@ -202,25 +133,6 @@ export function MessageComposer({
             <Smile size={18} />
           </button>
 
-          {/* Photo / Image Attachment Button */}
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              cursor: 'pointer',
-              color: selectedImage ? 'var(--primary)' : 'var(--text-muted)',
-              padding: '3px 6px 3px 2px',
-              display: 'flex',
-              alignItems: 'center'
-            }}
-            title="Send photo"
-            aria-label="Attach photo"
-          >
-            <ImageIcon size={18} />
-          </button>
-
           <textarea
             ref={textareaRef}
             value={text}
@@ -235,7 +147,7 @@ export function MessageComposer({
                 }
               }, 250);
             }}
-            placeholder={selectedImage ? 'Add a caption...' : placeholder}
+            placeholder={placeholder}
             className="composer-textarea"
             rows={1}
             disabled={disabled}

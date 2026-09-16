@@ -16,9 +16,7 @@ import {
   arrayUnion,
   arrayRemove
 } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage, isFirebaseConfigured } from './firebase';
-import { compressImage } from '../utils/imageCompressor';
+import { db, isFirebaseConfigured } from './firebase';
 
 /**
  * Real-time subscription to messages of a conversation
@@ -86,69 +84,6 @@ export async function sendMessage(conversationId, senderId, receiverId, text) {
   return newMsgRef.id;
 }
 
-/**
- * Send an image photo message (with client-side compression & resilient storage upload)
- */
-export async function sendImageMessage(conversationId, senderId, receiverId, file, captionText = '') {
-  if (!isFirebaseConfigured || !db) {
-    throw new Error('Firebase is not configured.');
-  }
-
-  // 1. Compress image client-side to lightweight JPEG (~80-150KB)
-  const compressed = await compressImage(file, 1280, 0.82);
-  let finalImageUrl = compressed.dataUrl; // Resilient fallback
-
-  // 2. Attempt Firebase Storage upload if storage is initialized
-  if (storage) {
-    try {
-      const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 7)}.jpg`;
-      const storageRef = ref(storage, `chat_images/${conversationId}/${fileName}`);
-      const uploadResult = await uploadBytes(storageRef, compressed.blob, {
-        contentType: 'image/jpeg'
-      });
-      const downloadUrl = await getDownloadURL(uploadResult.ref);
-      if (downloadUrl) {
-        finalImageUrl = downloadUrl;
-      }
-    } catch (storageErr) {
-      console.warn('Firebase Storage upload failed, using compressed data fallback:', storageErr);
-    }
-  }
-
-  // 3. Save message to Firestore
-  const messagesRef = collection(db, 'conversations', conversationId, 'messages');
-  const convRef = doc(db, 'conversations', conversationId);
-
-  const trimmedCaption = (captionText || '').trim();
-
-  const messageData = {
-    senderId,
-    receiverId,
-    text: trimmedCaption,
-    imageUrl: finalImageUrl,
-    type: 'image',
-    createdAt: serverTimestamp(),
-    seen: false,
-    seenBy: [senderId]
-  };
-
-  const newMsgRef = await addDoc(messagesRef, messageData);
-
-  // 4. Update conversation summary
-  await updateDoc(convRef, {
-    lastMessage: {
-      text: trimmedCaption ? `📷 ${trimmedCaption}` : '📷 Photo',
-      senderId,
-      createdAt: serverTimestamp(),
-      seen: false
-    },
-    updatedAt: serverTimestamp(),
-    [`unreadCounts.${receiverId}`]: increment(1),
-    [`typing.${senderId}`]: deleteField()
-  });
-
-  return newMsgRef.id;
-}
 
 /**
  * Mark all incoming messages in a conversation as seen
