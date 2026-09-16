@@ -14,33 +14,51 @@ export function ChatHeader({
   const [liveUser, setLiveUser] = useState(targetUser || null);
   const { showToast } = useToast();
 
-  // Re-sync whenever targetUser or targetUserId changes
+  // Re-sync basic static metadata only when the active chat user changes
   useEffect(() => {
     if (targetUser) {
-      setLiveUser(targetUser);
+      setLiveUser((prev) => {
+        if (!prev) return targetUser;
+        return {
+          ...targetUser,
+          ...prev, // Keep live properties from users/{id} subscription!
+          displayName: prev.displayName || targetUser.displayName,
+          username: prev.username || targetUser.username,
+          photoURL: prev.photoURL || targetUser.photoURL,
+          // CRITICAL: Strictly preserve real-time status and lastSeen from the user document
+          status: prev.status || targetUser.status || 'offline',
+          lastSeen: prev.lastSeen || targetUser.lastSeen
+        };
+      });
     }
-  }, [targetUser, targetUserId]);
+  }, [targetUserId]);
 
   // Subscribe to target user's real-time presence/profile
   useEffect(() => {
     if (!targetUserId) return;
 
-    // Fetch immediately to ensure name is never missing
+    let isMounted = true;
+
+    // Fetch immediately to ensure name and online status are never missing
     getUserProfile(targetUserId).then((data) => {
-      if (data) {
-        setLiveUser(data);
+      if (isMounted && data) {
+        setLiveUser((prev) => ({ ...prev, ...data }));
       }
     });
 
     const unsubscribe = subscribeUserProfile(targetUserId, (userData) => {
-      if (userData) {
-        setLiveUser(userData);
+      if (isMounted && userData) {
+        setLiveUser((prev) => ({ ...prev, ...userData }));
       }
     });
-    return () => unsubscribe();
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
   }, [targetUserId]);
 
   const displayName = liveUser?.displayName || liveUser?.username || targetUser?.displayName || targetUser?.username || 'User';
+  // Use liveUser status as highest priority since it comes directly from users/{id}
   const status = liveUser?.status || targetUser?.status || 'offline';
   const lastSeen = liveUser?.lastSeen || targetUser?.lastSeen;
   const statusText = formatLastSeen(status, lastSeen);

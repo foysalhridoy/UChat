@@ -127,14 +127,14 @@ export function MessageComposer({
               border: 'none',
               cursor: 'pointer',
               color: 'var(--text-muted)',
-              padding: '6px 4px 6px 0',
+              padding: '3px 4px 3px 0',
               display: 'flex',
               alignItems: 'center'
             }}
             title="Add emoji"
             aria-label="Add emoji"
           >
-            <Smile size={20} />
+            <Smile size={18} />
           </button>
 
           <textarea
@@ -171,7 +171,7 @@ export function MessageComposer({
             e.preventDefault();
           }}
         >
-          <SendHorizonal size={19} />
+          <SendHorizonal size={16} />
         </button>
       </form>
     </div>

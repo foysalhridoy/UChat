@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Avatar } from '../common/Avatar';
 import { formatConversationTime } from '../../utils/formatting';
+import { subscribeUserProfile } from '../../services/userService';
 
 export function ConversationItem({
   conversation,
@@ -15,6 +16,18 @@ export function ConversationItem({
     username: 'user',
     photoURL: ''
   };
+
+  const [liveUser, setLiveUser] = useState(otherData);
+
+  useEffect(() => {
+    if (!otherUid) return;
+    const unsub = subscribeUserProfile(otherUid, (profile) => {
+      if (profile) {
+        setLiveUser((prev) => ({ ...prev, ...profile }));
+      }
+    });
+    return () => unsub();
+  }, [otherUid]);
 
   const unreadCount = conversation.unreadCounts?.[currentUserId] || 0;
 
@@ -42,10 +55,10 @@ export function ConversationItem({
       aria-selected={isActive}
     >
       <Avatar
-        src={otherData.photoURL}
-        name={otherData.displayName || otherData.username}
+        src={liveUser.photoURL || otherData.photoURL}
+        name={liveUser.displayName || liveUser.username || otherData.displayName}
         size="md"
-        status={otherData.status}
+        status={liveUser.status || 'offline'}
         showStatus={true}
       />
       <div className="conversation-content">
