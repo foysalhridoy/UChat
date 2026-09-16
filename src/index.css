@@ -5,6 +5,7 @@
 @import './styles/landing.css';
 @import './styles/auth.css';
 @import './styles/settings.css';
+@import './styles/call.css';
 
 /* Modern CSS Reset & Baseline */
 *, *::before, *::after {

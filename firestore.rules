@@ -30,5 +30,13 @@ service cloud.firestore {
         allow read, write: if isAuthenticated();
       }
     }
+
+    // WebRTC Audio and Video Calls
+    match /calls/{callId} {
+      allow read, write: if isAuthenticated();
+      match /{subcollection=**} {
+        allow read, write: if isAuthenticated();
+      }
+    }
   }
 }

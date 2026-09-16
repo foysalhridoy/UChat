@@ -26,6 +26,15 @@ import { TypingIndicator } from '../components/chat/TypingIndicator';
 import { UserSearchModal } from '../components/chat/UserSearchModal';
 import { ProfileSettingsModal } from '../components/settings/ProfileSettingsModal';
 import { Modal } from '../components/common/Modal';
+import { IncomingCallModal } from '../components/call/IncomingCallModal';
+import { ActiveCallModal } from '../components/call/ActiveCallModal';
+import {
+  initiateCall,
+  answerCall,
+  rejectIncomingCall,
+  subscribeToIncomingCalls,
+  stopRingtone
+} from '../services/callService';
 import { getOrCreateConversation } from '../services/conversationService';
 import {
   sendMessage,
@@ -116,6 +125,138 @@ export function ChatAppPage() {
   // Back to conversations on mobile
   const handleBackToList = () => {
     setMobileView('list');
+  };
+
+  // WebRTC Audio & Video Calling State
+  const [incomingCall, setIncomingCall] = useState(null);
+  const [activeCall, setActiveCall] = useState(null);
+  const [callLocalStream, setCallLocalStream] = useState(null);
+  const [callRemoteStream, setCallRemoteStream] = useState(null);
+  const [callStatus, setCallStatus] = useState('calling'); // 'calling' | 'connecting' | 'connected'
+  const callSessionRef = React.useRef(null);
+
+  // Subscribe to incoming calls for current user
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    const unsub = subscribeToIncomingCalls(currentUser.uid, (call) => {
+      if (call) {
+        if (!activeCall) {
+          setIncomingCall(call);
+        }
+      } else {
+        setIncomingCall(null);
+      }
+    });
+    return () => unsub();
+  }, [currentUser?.uid, activeCall]);
+
+  const cleanupCallUI = () => {
+    stopRingtone();
+    callSessionRef.current = null;
+    setActiveCall(null);
+    setCallLocalStream(null);
+    setCallRemoteStream(null);
+    setCallStatus('calling');
+  };
+
+  const handleStartCall = async (target, type = 'audio') => {
+    if (!currentUser || !target) return;
+    if (activeCall) {
+      showToast('You are already in a call', 'warning');
+      return;
+    }
+
+    try {
+      const otherUid = target.uid || target.id;
+      const otherName = target.displayName || target.username || 'User';
+      const otherPhoto = target.photoURL || '';
+
+      setActiveCall({
+        type,
+        otherUserName: otherName,
+        otherUserPhoto: otherPhoto,
+        isCaller: true
+      });
+      setCallStatus('calling');
+
+      const session = await initiateCall({
+        caller: userProfile || currentUser,
+        receiver: { uid: otherUid, displayName: otherName, photoURL: otherPhoto },
+        type,
+        onRemoteStream: (stream) => {
+          setCallRemoteStream(stream);
+          setCallStatus('connected');
+        },
+        onCallActive: () => {
+          setCallStatus('connected');
+        },
+        onCallRejected: () => {
+          showToast(`${otherName} declined the call`, 'info');
+          cleanupCallUI();
+        },
+        onCallEnded: () => {
+          showToast('Call ended', 'info');
+          cleanupCallUI();
+        }
+      });
+
+      callSessionRef.current = session;
+      setCallLocalStream(session.localStream);
+    } catch (err) {
+      console.error('Failed to initiate call:', err);
+      showToast('Could not access microphone/camera. Please check permissions.', 'error');
+      cleanupCallUI();
+    }
+  };
+
+  const handleAcceptIncomingCall = async () => {
+    if (!incomingCall) return;
+    const callToAnswer = incomingCall;
+    setIncomingCall(null);
+
+    try {
+      setActiveCall({
+        callId: callToAnswer.id,
+        type: callToAnswer.type,
+        otherUserName: callToAnswer.callerName,
+        otherUserPhoto: callToAnswer.callerPhoto,
+        isCaller: false
+      });
+      setCallStatus('connecting');
+
+      const session = await answerCall({
+        call: { ...callToAnswer, callId: callToAnswer.id },
+        onRemoteStream: (stream) => {
+          setCallRemoteStream(stream);
+          setCallStatus('connected');
+        },
+        onCallEnded: () => {
+          showToast('Call ended', 'info');
+          cleanupCallUI();
+        }
+      });
+
+      callSessionRef.current = session;
+      setCallLocalStream(session.localStream);
+    } catch (err) {
+      console.error('Failed to answer call:', err);
+      showToast('Could not access microphone/camera to answer call.', 'error');
+      cleanupCallUI();
+    }
+  };
+
+  const handleDeclineIncomingCall = async () => {
+    if (!incomingCall) return;
+    const id = incomingCall.id;
+    setIncomingCall(null);
+    await rejectIncomingCall(id);
+  };
+
+  const handleEndActiveCall = async () => {
+    if (callSessionRef.current?.endCall) {
+      await callSessionRef.current.endCall();
+    }
+    cleanupCallUI();
   };
 
   // Start new conversation from search modal
@@ -321,6 +462,7 @@ export function ChatAppPage() {
                 targetUserId={targetUid}
                 onBack={handleBackToList}
                 onViewProfile={(u) => setViewingUser(u || targetUser)}
+                onStartCall={handleStartCall}
               />
 
               <MessageList
@@ -423,6 +565,26 @@ export function ChatAppPage() {
           </div>
         )}
       </Modal>
+
+      {/* WebRTC Incoming Call Alert Modal */}
+      {incomingCall && (
+        <IncomingCallModal
+          call={incomingCall}
+          onAccept={handleAcceptIncomingCall}
+          onDecline={handleDeclineIncomingCall}
+        />
+      )}
+
+      {/* WebRTC Active Call Screen Modal */}
+      {activeCall && (
+        <ActiveCallModal
+          call={activeCall}
+          localStream={callLocalStream}
+          remoteStream={callRemoteStream}
+          callStatus={callStatus}
+          onEndCall={handleEndActiveCall}
+        />
+      )}
     </div>
   );
 }

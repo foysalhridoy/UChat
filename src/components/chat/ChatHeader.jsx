@@ -9,7 +9,8 @@ export function ChatHeader({
   targetUser,
   targetUserId,
   onBack,
-  onViewProfile
+  onViewProfile,
+  onStartCall
 }) {
   const [liveUser, setLiveUser] = useState(targetUser || null);
   const { showToast } = useToast();
@@ -106,7 +107,7 @@ export function ChatHeader({
       {/* Header Actions */}
       <div className="chat-header-actions">
         <button
-          onClick={() => handleCallMock('Voice')}
+          onClick={() => onStartCall && onStartCall(liveUser || targetUser, 'audio')}
           className="btn btn-ghost btn-icon call-btn"
           title="Voice call"
           aria-label="Voice call"
@@ -115,7 +116,7 @@ export function ChatHeader({
         </button>
 
         <button
-          onClick={() => handleCallMock('Video')}
+          onClick={() => onStartCall && onStartCall(liveUser || targetUser, 'video')}
           className="btn btn-ghost btn-icon call-btn"
           title="Video call"
           aria-label="Video call"
