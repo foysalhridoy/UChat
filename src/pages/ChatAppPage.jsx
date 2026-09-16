@@ -41,7 +41,8 @@ import {
   sendMessage,
   deleteMessageForMe,
   deleteMessageForEveryone,
-  toggleMessageReaction
+  toggleMessageReaction,
+  logCallMessage
 } from '../services/messageService';
 import { formatLastSeen } from '../utils/formatting';
 import { subscribeUserProfile, getUserProfile } from '../services/userService';
@@ -136,6 +137,7 @@ export function ChatAppPage() {
   const [callStatus, setCallStatus] = useState('calling'); // 'calling' | 'connecting' | 'connected'
   const [callError, setCallError] = useState(null);
   const callSessionRef = React.useRef(null);
+  const callConnectedAtRef = React.useRef(null);
 
   // Subscribe to incoming calls for current user via conversations
   useEffect(() => {
@@ -154,6 +156,7 @@ export function ChatAppPage() {
 
   const cleanupCallUI = () => {
     stopRingtone();
+    callConnectedAtRef.current = null;
     callSessionRef.current = null;
     setActiveCall(null);
     setCallLocalStream(null);
@@ -181,12 +184,15 @@ export function ChatAppPage() {
       const otherPhoto = target.photoURL || targetUser?.photoURL || '';
       const convId = activeConversationId || getConversationId(currentUser.uid, otherUid);
 
+      callConnectedAtRef.current = null;
       setActiveCall({
         conversationId: convId,
         type,
         otherUserName: otherName,
         otherUserPhoto: otherPhoto,
-        isCaller: true
+        isCaller: true,
+        callerId: currentUser.uid,
+        receiverId: otherUid
       });
       setCallStatus('calling');
 
@@ -198,20 +204,47 @@ export function ChatAppPage() {
         onRemoteStream: (stream) => {
           setCallRemoteStream(stream);
           setCallStatus('connected');
+          if (!callConnectedAtRef.current) {
+            callConnectedAtRef.current = Date.now();
+          }
         },
         onCallActive: () => {
           setCallStatus('connected');
+          if (!callConnectedAtRef.current) {
+            callConnectedAtRef.current = Date.now();
+          }
         },
         onCallRejected: () => {
           cleanupCallUI();
           setCallError(`${otherName} was unable or declined to take the call.`);
+          logCallMessage(convId, {
+            callId: session.callId,
+            callerId: currentUser.uid,
+            receiverId: otherUid,
+            type,
+            status: 'declined',
+            duration: 0
+          });
         },
         onCallEnded: () => {
+          const duration = callConnectedAtRef.current
+            ? Math.round((Date.now() - callConnectedAtRef.current) / 1000)
+            : 0;
+          const status = callConnectedAtRef.current ? 'completed' : 'missed';
+          logCallMessage(convId, {
+            callId: session.callId,
+            callerId: currentUser.uid,
+            receiverId: otherUid,
+            type,
+            status,
+            duration
+          });
           cleanupCallUI();
         }
       });
 
       callSessionRef.current = session;
+      setActiveCall((prev) => (prev ? { ...prev, callId: session.callId } : null));
       setCallLocalStream(session.localStream);
     } catch (err) {
       console.error('Failed to initiate call:', err);
@@ -238,13 +271,16 @@ export function ChatAppPage() {
     try {
       const convId = callToAnswer.conversationId || activeConversationId || getConversationId(currentUser.uid, callToAnswer.callerId);
 
+      callConnectedAtRef.current = null;
       setActiveCall({
         conversationId: convId,
         callId: callToAnswer.id || callToAnswer.callId,
         type: callToAnswer.type,
         otherUserName: callToAnswer.callerName,
         otherUserPhoto: callToAnswer.callerPhoto,
-        isCaller: false
+        isCaller: false,
+        callerId: callToAnswer.callerId,
+        receiverId: currentUser.uid
       });
       setCallStatus('connecting');
 
@@ -254,8 +290,23 @@ export function ChatAppPage() {
         onRemoteStream: (stream) => {
           setCallRemoteStream(stream);
           setCallStatus('connected');
+          if (!callConnectedAtRef.current) {
+            callConnectedAtRef.current = Date.now();
+          }
         },
         onCallEnded: () => {
+          const duration = callConnectedAtRef.current
+            ? Math.round((Date.now() - callConnectedAtRef.current) / 1000)
+            : 0;
+          const status = callConnectedAtRef.current ? 'completed' : 'missed';
+          logCallMessage(convId, {
+            callId: session.callId || callToAnswer.callId || callToAnswer.id,
+            callerId: callToAnswer.callerId,
+            receiverId: currentUser.uid,
+            type: callToAnswer.type,
+            status,
+            duration
+          });
           cleanupCallUI();
         }
       });
@@ -279,12 +330,37 @@ export function ChatAppPage() {
 
   const handleDeclineIncomingCall = async () => {
     if (!incomingCall) return;
-    const convId = incomingCall.conversationId || incomingCall.id;
+    const callToDecline = incomingCall;
+    const convId = callToDecline.conversationId || callToDecline.id;
     setIncomingCall(null);
     await rejectIncomingCall(convId);
+    logCallMessage(convId, {
+      callId: callToDecline.callId || callToDecline.id,
+      callerId: callToDecline.callerId,
+      receiverId: currentUser?.uid,
+      type: callToDecline.type,
+      status: 'declined',
+      duration: 0
+    });
   };
 
   const handleEndActiveCall = async () => {
+    const duration = callConnectedAtRef.current
+      ? Math.round((Date.now() - callConnectedAtRef.current) / 1000)
+      : 0;
+    const status = callConnectedAtRef.current ? 'completed' : (activeCall?.isCaller ? 'missed' : 'declined');
+
+    if (activeCall && activeCall.conversationId) {
+      logCallMessage(activeCall.conversationId, {
+        callId: activeCall.callId,
+        callerId: activeCall.callerId || (activeCall.isCaller ? currentUser?.uid : targetUid),
+        receiverId: activeCall.receiverId || (activeCall.isCaller ? targetUid : currentUser?.uid),
+        type: activeCall.type,
+        status,
+        duration
+      });
+    }
+
     if (callSessionRef.current?.endCall) {
       await callSessionRef.current.endCall();
     }

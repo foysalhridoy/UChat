@@ -776,3 +776,65 @@
     display: none;
   }
 }
+
+/* In-Chat Call History Message Card */
+.message-call-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 2px;
+  min-width: 180px;
+}
+
+.message-call-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background-color: rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+}
+
+.message-row.incoming .message-call-icon {
+  background-color: rgba(99, 102, 241, 0.14);
+  color: var(--primary);
+}
+
+.message-call-icon.missed {
+  background-color: rgba(239, 68, 68, 0.16) !important;
+  color: #ef4444 !important;
+}
+
+.message-call-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.message-call-title {
+  font-size: 0.90rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.message-call-card.missed .message-call-title {
+  color: #ef4444;
+}
+
+.message-call-subtitle {
+  font-size: 0.74rem;
+  opacity: 0.88;
+}
+
+.message-row.outgoing .message-call-subtitle {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.message-row.incoming .message-call-subtitle {
+  color: var(--text-muted);
+}
+

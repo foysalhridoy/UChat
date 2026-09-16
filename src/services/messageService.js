@@ -2,6 +2,7 @@ import {
   collection,
   doc,
   addDoc,
+  setDoc,
   updateDoc,
   onSnapshot,
   query,
@@ -217,3 +218,82 @@ export async function toggleMessageReaction(conversationId, messageId, userId, e
     reactions: currentReactions
   });
 }
+
+/**
+ * Log a completed, missed, or declined call into the conversation messages
+ */
+export async function logCallMessage(conversationId, {
+  callId,
+  callerId,
+  receiverId,
+  type = 'audio', // 'audio' | 'video'
+  status = 'completed', // 'completed' | 'missed' | 'declined'
+  duration = 0
+}) {
+  if (!isFirebaseConfigured || !db || !conversationId || !callerId) return;
+
+  const msgId = callId ? `call_${callId}` : `call_${Date.now()}`;
+  const msgDocRef = doc(db, 'conversations', conversationId, 'messages', msgId);
+  const convRef = doc(db, 'conversations', conversationId);
+
+  const isVideo = type === 'video';
+  const prefix = isVideo ? '📹 Video call' : '📞 Voice call';
+  let displayText = prefix;
+
+  if (status === 'completed') {
+    if (duration > 0) {
+      const mins = Math.floor(duration / 60);
+      const secs = duration % 60;
+      const durStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+      displayText = `${prefix} (${durStr})`;
+    } else {
+      displayText = `${prefix}`;
+    }
+  } else if (status === 'declined' || status === 'rejected') {
+    displayText = isVideo ? '📹 Declined video call' : '📞 Declined voice call';
+  } else {
+    displayText = isVideo ? '📹 Missed video call' : '📞 Missed voice call';
+  }
+
+  const callRecord = {
+    id: msgId,
+    senderId: callerId,
+    receiverId: receiverId || '',
+    text: displayText,
+    type: 'call',
+    callData: {
+      callId: callId || msgId,
+      type,
+      status,
+      duration: duration || 0,
+      callerId,
+      receiverId: receiverId || ''
+    },
+    createdAt: serverTimestamp(),
+    seen: false,
+    seenBy: [callerId]
+  };
+
+  try {
+    await setDoc(msgDocRef, callRecord, { merge: true });
+
+    const updateData = {
+      lastMessage: {
+        text: displayText,
+        senderId: callerId,
+        createdAt: serverTimestamp(),
+        seen: false
+      },
+      updatedAt: serverTimestamp()
+    };
+
+    if (status === 'missed' && receiverId) {
+      updateData[`unreadCounts.${receiverId}`] = increment(1);
+    }
+
+    await updateDoc(convRef, updateData);
+  } catch (err) {
+    console.warn('Error logging call message:', err);
+  }
+}
+

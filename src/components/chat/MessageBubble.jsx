@@ -1,5 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Check, CheckCheck, Smile, Trash2, Ban } from 'lucide-react';
+import {
+  Check,
+  CheckCheck,
+  Smile,
+  Trash2,
+  Ban,
+  Phone,
+  PhoneIncoming,
+  PhoneOutgoing,
+  PhoneMissed,
+  Video
+} from 'lucide-react';
 import { formatMessageTime, renderTextWithLinks } from '../../utils/formatting';
 import { DeleteMessageModal } from './DeleteMessageModal';
 
@@ -46,6 +57,37 @@ export function MessageBubble({
       onReact(message.id, emoji);
     }
   };
+
+  // Call message metadata
+  const isCallMessage = message.type === 'call';
+  const isVideoCall = message.callData?.type === 'video' || message.text?.toLowerCase().includes('video');
+  const callStatus = message.callData?.status || (message.text?.toLowerCase().includes('missed') ? 'missed' : (message.text?.toLowerCase().includes('declined') ? 'declined' : 'completed'));
+  const isCallMissed = callStatus === 'missed' || callStatus === 'declined' || callStatus === 'rejected';
+  const duration = message.callData?.duration || 0;
+
+  let callTitle = isVideoCall ? 'Video Call' : 'Voice Call';
+  if (isCallMissed) {
+    if (callStatus === 'declined' || callStatus === 'rejected') {
+      callTitle = isCurrentUser ? (isVideoCall ? 'Declined Video Call' : 'Declined Voice Call') : (isVideoCall ? 'Declined Video Call' : 'Declined Voice Call');
+    } else {
+      callTitle = isCurrentUser ? (isVideoCall ? 'Unanswered Video Call' : 'Unanswered Voice Call') : (isVideoCall ? 'Missed Video Call' : 'Missed Voice Call');
+    }
+  } else {
+    callTitle = isCurrentUser ? (isVideoCall ? 'Outgoing Video Call' : 'Outgoing Voice Call') : (isVideoCall ? 'Incoming Video Call' : 'Incoming Voice Call');
+  }
+
+  let callSubtitle = '';
+  if (duration > 0) {
+    const mins = Math.floor(duration / 60);
+    const secs = duration % 60;
+    callSubtitle = mins > 0 ? `${mins} min ${secs} sec` : `${secs} sec`;
+  } else if (callStatus === 'declined' || callStatus === 'rejected') {
+    callSubtitle = 'Declined';
+  } else if (isCallMissed) {
+    callSubtitle = isCurrentUser ? 'No answer' : 'Missed';
+  } else {
+    callSubtitle = 'Call ended';
+  }
 
   return (
     <>
@@ -102,6 +144,28 @@ export function MessageBubble({
                 <span className="deleted-text">
                   {isCurrentUser ? 'You deleted this message' : 'This message was deleted'}
                 </span>
+              </div>
+            ) : isCallMessage ? (
+              <div className={`message-call-card ${isCallMissed ? 'missed' : ''}`}>
+                <div className={`message-call-icon ${isCallMissed ? 'missed' : ''}`}>
+                  {isVideoCall ? (
+                    <Video size={18} />
+                  ) : isCallMissed ? (
+                    <PhoneMissed size={18} />
+                  ) : isCurrentUser ? (
+                    <PhoneOutgoing size={18} />
+                  ) : (
+                    <PhoneIncoming size={18} />
+                  )}
+                </div>
+                <div className="message-call-info">
+                  <div className="message-call-title">
+                    {callTitle}
+                  </div>
+                  <div className="message-call-subtitle">
+                    {callSubtitle}
+                  </div>
+                </div>
               </div>
             ) : (
               <span className="message-text">
