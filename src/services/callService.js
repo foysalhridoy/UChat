@@ -91,6 +91,18 @@ export function stopRingtone() {
  * Acquire local audio/video media stream with resilient fallback
  */
 export async function getLocalMediaStream(type = 'video') {
+  if (typeof window !== 'undefined' && !window.isSecureContext) {
+    throw new Error(
+      'HTTPS_REQUIRED: WebRTC calling requires a secure HTTPS connection. If you are on an http:// or local IP address, please open your deployed Vercel HTTPS URL (https://...) in Google Chrome.'
+    );
+  }
+
+  if (!navigator?.mediaDevices?.getUserMedia) {
+    throw new Error(
+      'BROWSER_UNSUPPORTED: Media capture is not supported in this browser. Please open the site in Google Chrome or Safari.'
+    );
+  }
+
   const wantsVideo = type === 'video';
 
   if (wantsVideo) {
@@ -99,19 +111,39 @@ export async function getLocalMediaStream(type = 'video') {
         audio: true,
         video: { facingMode: 'user' }
       });
-    } catch (err) {
-      console.warn('Camera not accessible, falling back to audio-only stream:', err);
-      return await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: false
-      });
+    } catch (videoErr) {
+      console.warn('Camera with facingMode failed, trying generic video:', videoErr);
+      try {
+        return await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: true
+        });
+      } catch (videoErr2) {
+        console.warn('Camera completely unavailable, falling back to audio-only stream:', videoErr2);
+        return await getLocalAudioStream();
+      }
     }
   }
 
-  return await navigator.mediaDevices.getUserMedia({
-    audio: true,
-    video: false
-  });
+  return await getLocalAudioStream();
+}
+
+async function getLocalAudioStream() {
+  try {
+    return await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (err) {
+    console.warn('Standard audio failed, trying with audio constraints:', err);
+    try {
+      return await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true
+        }
+      });
+    } catch (err2) {
+      throw err;
+    }
+  }
 }
 
 /**

@@ -216,10 +216,14 @@ export function ChatAppPage() {
     } catch (err) {
       console.error('Failed to initiate call:', err);
       cleanupCallUI();
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        setCallError('Microphone/Camera permission was denied. Please allow microphone and camera access in your browser settings to make calls.');
+      if (err.message && err.message.includes('HTTPS_REQUIRED')) {
+        setCallError('HTTPS Connection Required: Audio and Video calling requires a secure HTTPS connection. Please open your deployed Vercel link (https://...) in Google Chrome instead of http://.');
+      } else if (err.message && err.message.includes('BROWSER_UNSUPPORTED')) {
+        setCallError('Your browser does not support media capture. Please open the app in Google Chrome or Safari.');
+      } else if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setCallError('Microphone or Camera access is blocked. In your phone settings, go to Settings > Apps > Chrome > Permissions and set Microphone & Camera to "Allow".');
       } else if (err.name === 'NotFoundError') {
-        setCallError('No microphone or camera device found on this device.');
+        setCallError('No microphone or camera device found on this phone/computer.');
       } else {
         setCallError(err.message || 'Could not start call. Please check device permissions and try again.');
       }
@@ -261,10 +265,14 @@ export function ChatAppPage() {
     } catch (err) {
       console.error('Failed to answer call:', err);
       cleanupCallUI();
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        setCallError('Microphone/Camera permission was denied. Please allow access in browser settings.');
+      if (err.message && err.message.includes('HTTPS_REQUIRED')) {
+        setCallError('HTTPS Connection Required: Audio and Video calling requires a secure HTTPS connection. Please open your deployed Vercel link (https://...) in Google Chrome instead of http://.');
+      } else if (err.message && err.message.includes('BROWSER_UNSUPPORTED')) {
+        setCallError('Your browser does not support media capture. Please open the app in Google Chrome or Safari.');
+      } else if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setCallError('Microphone or Camera access is blocked. In your phone settings, go to Settings > Apps > Chrome > Permissions and set Microphone & Camera to "Allow".');
       } else {
-        setCallError('Could not access microphone/camera to answer the call.');
+        setCallError(err.message || 'Could not access microphone/camera to answer the call.');
       }
     }
   };
