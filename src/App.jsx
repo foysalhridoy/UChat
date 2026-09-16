@@ -47,16 +47,42 @@ function AppContent() {
     }
   }, [currentUser, loading, currentPage]);
 
+  // Mobile virtual keyboard height management via visualViewport
+  useEffect(() => {
+    const updateViewportHeight = () => {
+      const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+      document.documentElement.style.setProperty('--app-height', `${vh}px`);
+    };
+
+    updateViewportHeight();
+
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', updateViewportHeight);
+      window.visualViewport.addEventListener('scroll', updateViewportHeight);
+    } else {
+      window.addEventListener('resize', updateViewportHeight);
+    }
+
+    return () => {
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', updateViewportHeight);
+        window.visualViewport.removeEventListener('scroll', updateViewportHeight);
+      } else {
+        window.removeEventListener('resize', updateViewportHeight);
+      }
+    };
+  }, []);
+
   if (loading) {
     return (
-      <div style={{ height: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ height: 'var(--app-height, 100dvh)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <LoadingSpinner text="Connecting to UChat..." size="lg" />
       </div>
     );
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: 'var(--app-height, 100dvh)', width: '100%', overflow: 'hidden' }}>
       <FirebaseSetupBanner />
       {currentPage === 'chat' && currentUser ? (
         <ChatAppPage />

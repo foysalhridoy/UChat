@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, Phone, Video, MoreVertical, Info } from 'lucide-react';
+import { ArrowLeft, Phone, Video, Info } from 'lucide-react';
 import { Avatar } from '../common/Avatar';
-import { subscribeUserProfile } from '../../services/userService';
+import { subscribeUserProfile, getUserProfile } from '../../services/userService';
 import { formatLastSeen } from '../../utils/formatting';
 import { useToast } from '../../context/ToastContext';
 
@@ -14,9 +14,24 @@ export function ChatHeader({
   const [liveUser, setLiveUser] = useState(targetUser || null);
   const { showToast } = useToast();
 
+  // Re-sync whenever targetUser or targetUserId changes
+  useEffect(() => {
+    if (targetUser) {
+      setLiveUser(targetUser);
+    }
+  }, [targetUser, targetUserId]);
+
   // Subscribe to target user's real-time presence/profile
   useEffect(() => {
     if (!targetUserId) return;
+
+    // Fetch immediately to ensure name is never missing
+    getUserProfile(targetUserId).then((data) => {
+      if (data) {
+        setLiveUser(data);
+      }
+    });
+
     const unsubscribe = subscribeUserProfile(targetUserId, (userData) => {
       if (userData) {
         setLiveUser(userData);
@@ -25,22 +40,23 @@ export function ChatHeader({
     return () => unsubscribe();
   }, [targetUserId]);
 
-  const displayName = liveUser?.displayName || liveUser?.username || 'User';
-  const status = liveUser?.status || 'offline';
-  const statusText = formatLastSeen(status, liveUser?.lastSeen);
+  const displayName = liveUser?.displayName || liveUser?.username || targetUser?.displayName || targetUser?.username || 'User';
+  const status = liveUser?.status || targetUser?.status || 'offline';
+  const lastSeen = liveUser?.lastSeen || targetUser?.lastSeen;
+  const statusText = formatLastSeen(status, lastSeen);
 
   const handleCallMock = (type) => {
-    showToast(`${type} call feature is coming soon in the WebRTC update!`, 'info');
+    showToast(`${type} calling will be enabled in the upcoming WebRTC release!`, 'info');
   };
 
   return (
     <header className="chat-header">
-      {/* Mobile Back Button */}
+      {/* Mobile Back Button with comfortable touch target */}
       <button
         onClick={onBack}
         className="btn btn-ghost btn-icon chat-back-btn"
-        aria-label="Back to chats"
-        title="Back to chats"
+        aria-label="Back to conversations"
+        title="Back to conversations"
       >
         <ArrowLeft size={22} />
       </button>
@@ -48,13 +64,13 @@ export function ChatHeader({
       {/* Tappable Contact Area (Telegram / WhatsApp style) */}
       <div
         className="chat-header-user"
-        onClick={() => onViewProfile && onViewProfile(liveUser)}
+        onClick={() => onViewProfile && onViewProfile(liveUser || targetUser)}
         role="button"
         tabIndex={0}
-        title="Click to view profile info"
+        title="View profile info"
       >
         <Avatar
-          src={liveUser?.photoURL}
+          src={liveUser?.photoURL || targetUser?.photoURL}
           name={displayName}
           size="md"
           status={status}
@@ -69,11 +85,11 @@ export function ChatHeader({
         </div>
       </div>
 
-      {/* Header Actions (WhatsApp / Messenger Style) */}
+      {/* Header Actions */}
       <div className="chat-header-actions">
         <button
           onClick={() => handleCallMock('Voice')}
-          className="btn btn-ghost btn-icon"
+          className="btn btn-ghost btn-icon call-btn"
           title="Voice call"
           aria-label="Voice call"
         >
@@ -82,7 +98,7 @@ export function ChatHeader({
 
         <button
           onClick={() => handleCallMock('Video')}
-          className="btn btn-ghost btn-icon"
+          className="btn btn-ghost btn-icon call-btn"
           title="Video call"
           aria-label="Video call"
         >
@@ -90,7 +106,7 @@ export function ChatHeader({
         </button>
 
         <button
-          onClick={() => onViewProfile && onViewProfile(liveUser)}
+          onClick={() => onViewProfile && onViewProfile(liveUser || targetUser)}
           className="btn btn-ghost btn-icon"
           title="Contact info"
           aria-label="Contact info"

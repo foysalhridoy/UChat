@@ -8,19 +8,19 @@ export function MessageBubble({ message, isCurrentUser }) {
   return (
     <div className={`message-row ${isCurrentUser ? 'outgoing' : 'incoming'}`}>
       <div className="message-bubble">
-        <span>{message.text}</span>
-        <div className="message-meta">
+        <span className="message-text">{message.text}</span>
+        <span className="message-meta">
           <span>{timeFormatted}</span>
           {isCurrentUser && (
             <span className="seen-icon" title={message.seen ? 'Seen' : 'Sent'}>
               {message.seen ? (
-                <CheckCheck size={14} color="#a5b4fc" />
+                <CheckCheck size={14} color="#93c5fd" />
               ) : (
                 <Check size={14} />
               )}
             </span>
           )}
-        </div>
+        </span>
       </div>
     </div>
   );

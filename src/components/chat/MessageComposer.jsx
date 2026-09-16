@@ -132,6 +132,12 @@ export function MessageComposer({
             value={text}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
+            onFocus={() => {
+              setTimeout(() => {
+                const el = document.querySelector('.message-list-container');
+                if (el) el.scrollTop = el.scrollHeight;
+              }, 250);
+            }}
             placeholder={placeholder}
             className="composer-textarea"
             rows={1}

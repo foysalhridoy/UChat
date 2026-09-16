@@ -246,10 +246,9 @@ export function ChatAppPage() {
           </div>
         </aside>
 
-        {/* Main Content Area: Active Chat or Empty Placeholder */}
         <main className="chat-main" aria-label="Chat messages area">
           {activeConversation ? (
-            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', minHeight: 0, overflow: 'hidden' }}>
               <ChatHeader
                 targetUser={targetUser}
                 targetUserId={targetUid}
