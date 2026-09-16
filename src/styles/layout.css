@@ -1,0 +1,165 @@
+/* Layout & Responsive Grid Shell */
+.app-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100dvh;
+  min-height: 100vh;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  overflow: hidden;
+  position: relative;
+}
+
+/* Chat Main Layout */
+.chat-layout {
+  display: flex;
+  width: 100%;
+  height: 100dvh;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Sidebar (Conversations List) */
+.chat-sidebar {
+  display: flex;
+  flex-direction: column;
+  background-color: var(--bg-secondary);
+  border-right: 1px solid var(--border-subtle);
+  height: 100%;
+  width: 100%;
+  flex-shrink: 0;
+  overflow: hidden;
+  z-index: 10;
+  transition: transform var(--transition-normal);
+}
+
+/* Main Chat Content Area */
+.chat-main {
+  display: flex;
+  flex-direction: column;
+  background-color: var(--bg-primary);
+  height: 100%;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Mobile-First Behavior (< 768px) */
+@media (max-width: 767px) {
+  .chat-layout {
+    position: relative;
+  }
+
+  /* When no conversation is active: show sidebar full screen */
+  .chat-layout[data-view="list"] .chat-sidebar {
+    display: flex;
+    width: 100%;
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    transform: translateX(0);
+  }
+  .chat-layout[data-view="list"] .chat-main {
+    display: none;
+  }
+
+  /* When conversation is active: show chat full screen, hide sidebar */
+  .chat-layout[data-view="chat"] .chat-sidebar {
+    display: none;
+  }
+  .chat-layout[data-view="chat"] .chat-main {
+    display: flex;
+    width: 100%;
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    transform: translateX(0);
+  }
+}
+
+/* Tablet & Desktop Layout (>= 768px) */
+@media (min-width: 768px) {
+  .chat-sidebar {
+    width: clamp(320px, 32vw, 380px);
+    position: relative;
+    display: flex !important;
+  }
+
+  .chat-main {
+    display: flex !important;
+    position: relative;
+  }
+}
+
+@media (min-width: 1440px) {
+  .chat-sidebar {
+    width: 400px;
+  }
+}
+
+/* Sidebar Top Header */
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  gap: 12px;
+  background-color: var(--bg-secondary);
+  flex-shrink: 0;
+}
+
+.sidebar-user-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: var(--radius-md);
+  transition: background-color var(--transition-fast);
+}
+
+.sidebar-user-info:hover {
+  background-color: var(--bg-tertiary);
+}
+
+.sidebar-user-details {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sidebar-username {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-user-tag {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* Search bar container */
+.sidebar-search-container {
+  padding: 12px 16px;
+  background-color: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
