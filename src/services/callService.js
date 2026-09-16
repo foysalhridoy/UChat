@@ -17,7 +17,9 @@ const rtcConfig = {
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' }
+    { urls: 'stun:stun4.l.google.com:19302' },
+    { urls: 'stun:stun.services.mozilla.com' },
+    { urls: 'stun:stun.relay.metered.ca:80' }
   ],
   iceCandidatePoolSize: 10
 };
@@ -85,6 +87,25 @@ export function stopRingtone() {
     } catch (e) {}
     audioCtx = null;
   }
+}
+
+/**
+ * Wait for ICE gathering to complete or timeout.
+ * Embedding gathered candidates directly in localDescription.sdp drastically speeds up P2P connection.
+ */
+async function waitForIceGathering(peerConnection, maxWaitMs = 500) {
+  if (peerConnection.iceGatheringState === 'complete') return;
+  await new Promise((resolve) => {
+    const timer = setTimeout(resolve, maxWaitMs);
+    const handler = () => {
+      if (peerConnection.iceGatheringState === 'complete') {
+        clearTimeout(timer);
+        peerConnection.removeEventListener('icegatheringstatechange', handler);
+        resolve();
+      }
+    };
+    peerConnection.addEventListener('icegatheringstatechange', handler);
+  });
 }
 
 /**
@@ -181,15 +202,33 @@ export async function initiateCall({
   // 2. Initialize WebRTC Peer Connection
   const peerConnection = new RTCPeerConnection(rtcConfig);
 
+  // Add all local tracks
   localStream.getTracks().forEach((track) => {
     peerConnection.addTrack(track, localStream);
   });
 
+  // Prepare transceiver for video if caller wants video but has no camera
+  if (type === 'video' && !localStream.getVideoTracks().length) {
+    peerConnection.addTransceiver('video', { direction: 'recvonly' });
+  }
+
+  // Persistent MediaStream accumulator for all incoming tracks
+  const remoteStream = new MediaStream();
+
   peerConnection.ontrack = (event) => {
+    stopRingtone();
     if (event.streams && event.streams[0]) {
-      stopRingtone();
-      if (onRemoteStream) onRemoteStream(event.streams[0]);
+      event.streams[0].getTracks().forEach((track) => {
+        if (!remoteStream.getTracks().some((t) => t.id === track.id)) {
+          remoteStream.addTrack(track);
+        }
+      });
+    } else if (event.track) {
+      if (!remoteStream.getTracks().some((t) => t.id === event.track.id)) {
+        remoteStream.addTrack(event.track);
+      }
     }
+    if (onRemoteStream) onRemoteStream(remoteStream);
   };
 
   peerConnection.onconnectionstatechange = () => {
@@ -219,16 +258,22 @@ export async function initiateCall({
     if (pendingBatch.length === 0) return;
     const toSend = [...pendingBatch];
     pendingBatch.length = 0;
-    updateDoc(convRef, {
-      'activeCall.offerCandidates': arrayUnion(...toSend)
-    }).catch((err) => {
-      console.warn('Error flushing offer candidates:', err);
-    });
+    if (toSend.length > 0) {
+      updateDoc(convRef, {
+        'activeCall.offerCandidates': arrayUnion(...toSend)
+      }).catch((err) => {
+        console.warn('Error flushing offer candidates:', err);
+      });
+    }
   };
 
   peerConnection.onicecandidate = (event) => {
     if (event.candidate) {
-      const candObj = event.candidate.toJSON();
+      const candObj = {
+        candidate: event.candidate.candidate,
+        sdpMid: event.candidate.sdpMid,
+        sdpMLineIndex: event.candidate.sdpMLineIndex
+      };
       if (!isDocInitialized) {
         earlyCandidates.push(candObj);
       } else {
@@ -237,16 +282,18 @@ export async function initiateCall({
           batchTimeout = setTimeout(() => {
             batchTimeout = null;
             flushCandidatesBatch();
-          }, 250);
+          }, 300);
         }
       }
     }
   };
 
-  // 3. Create Offer SDP
+  // 3. Create Offer SDP & wait briefly for ICE gathering
   const offerDescription = await peerConnection.createOffer();
   await peerConnection.setLocalDescription(offerDescription);
+  await waitForIceGathering(peerConnection, 500);
 
+  const localOffer = peerConnection.localDescription || offerDescription;
   const callId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const callData = {
     callId,
@@ -261,8 +308,8 @@ export async function initiateCall({
     status: 'calling', // 'calling' | 'active' | 'rejected' | 'ended'
     createdAt: Date.now(),
     offer: {
-      sdp: offerDescription.sdp || '',
-      type: offerDescription.type || 'offer'
+      sdp: localOffer.sdp || '',
+      type: localOffer.type || 'offer'
     },
     answer: null,
     offerCandidates: earlyCandidates,
@@ -419,10 +466,27 @@ export async function answerCall({
     peerConnection.addTrack(track, localStream);
   });
 
+  // Prepare transceiver for video if caller sent video but receiver has no camera
+  if (call.type === 'video' && !localStream.getVideoTracks().length) {
+    peerConnection.addTransceiver('video', { direction: 'recvonly' });
+  }
+
+  // Persistent MediaStream accumulator for remote tracks
+  const remoteStream = new MediaStream();
+
   peerConnection.ontrack = (event) => {
     if (event.streams && event.streams[0]) {
-      if (onRemoteStream) onRemoteStream(event.streams[0]);
+      event.streams[0].getTracks().forEach((track) => {
+        if (!remoteStream.getTracks().some((t) => t.id === track.id)) {
+          remoteStream.addTrack(track);
+        }
+      });
+    } else if (event.track) {
+      if (!remoteStream.getTracks().some((t) => t.id === event.track.id)) {
+        remoteStream.addTrack(event.track);
+      }
     }
+    if (onRemoteStream) onRemoteStream(remoteStream);
   };
 
   // Buffer and flush answer ICE candidates
@@ -435,16 +499,22 @@ export async function answerCall({
     if (pendingAnswerBatch.length === 0) return;
     const toSend = [...pendingAnswerBatch];
     pendingAnswerBatch.length = 0;
-    updateDoc(convRef, {
-      'activeCall.answerCandidates': arrayUnion(...toSend)
-    }).catch((err) => {
-      console.warn('Error flushing answer candidates:', err);
-    });
+    if (toSend.length > 0) {
+      updateDoc(convRef, {
+        'activeCall.answerCandidates': arrayUnion(...toSend)
+      }).catch((err) => {
+        console.warn('Error flushing answer candidates:', err);
+      });
+    }
   };
 
   peerConnection.onicecandidate = (event) => {
     if (event.candidate) {
-      const candObj = event.candidate.toJSON();
+      const candObj = {
+        candidate: event.candidate.candidate,
+        sdpMid: event.candidate.sdpMid,
+        sdpMLineIndex: event.candidate.sdpMLineIndex
+      };
       if (!isAnswerSaved) {
         earlyAnswerCandidates.push(candObj);
       } else {
@@ -453,7 +523,7 @@ export async function answerCall({
           answerBatchTimeout = setTimeout(() => {
             answerBatchTimeout = null;
             flushAnswerBatch();
-          }, 250);
+          }, 300);
         }
       }
     }
@@ -476,19 +546,26 @@ export async function answerCall({
     }
   }
 
-  // 4. Create Answer SDP & set local description
+  // 4. Create Answer SDP, set local description & wait briefly for ICE gathering
   const answerDescription = await peerConnection.createAnswer();
   await peerConnection.setLocalDescription(answerDescription);
+  await waitForIceGathering(peerConnection, 500);
 
-  // 5. Update conversation with answer and initial candidates
-  await updateDoc(convRef, {
+  const localAnswer = peerConnection.localDescription || answerDescription;
+
+  // 5. Update conversation with answer (never pass empty array to arrayUnion)
+  const updatePayload = {
     'activeCall.status': 'active',
     'activeCall.answer': {
-      type: answerDescription.type,
-      sdp: answerDescription.sdp
-    },
-    'activeCall.answerCandidates': arrayUnion(...earlyAnswerCandidates)
-  });
+      type: localAnswer.type,
+      sdp: localAnswer.sdp
+    }
+  };
+  if (earlyAnswerCandidates.length > 0) {
+    updatePayload['activeCall.answerCandidates'] = arrayUnion(...earlyAnswerCandidates);
+  }
+
+  await updateDoc(convRef, updatePayload);
   isAnswerSaved = true;
 
   if (pendingAnswerBatch.length > 0) {

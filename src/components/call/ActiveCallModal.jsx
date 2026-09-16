@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, Video, VideoOff, PhoneOff } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, PhoneOff, Volume2 } from 'lucide-react';
 import { Avatar } from '../common/Avatar';
 
 export function ActiveCallModal({
@@ -12,28 +12,72 @@ export function ActiveCallModal({
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [duration, setDuration] = useState(0);
+  const [audioBlocked, setAudioBlocked] = useState(false);
 
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const remoteAudioRef = useRef(null);
 
-  // Attach local stream to preview video
+  // Callback ref for remote video to guarantee srcObject is attached the instant it mounts in DOM
+  const setRemoteVideoRef = (element) => {
+    remoteVideoRef.current = element;
+    if (element && remoteStream) {
+      if (element.srcObject !== remoteStream) {
+        element.srcObject = remoteStream;
+      }
+      element.play().catch((err) => {
+        console.warn('Remote video autoplay blocked:', err);
+        setAudioBlocked(true);
+      });
+    }
+  };
+
+  // Callback ref for remote audio
+  const setRemoteAudioRef = (element) => {
+    remoteAudioRef.current = element;
+    if (element && remoteStream) {
+      if (element.srcObject !== remoteStream) {
+        element.srcObject = remoteStream;
+      }
+      element.play().catch((err) => {
+        console.warn('Remote audio autoplay blocked:', err);
+        setAudioBlocked(true);
+      });
+    }
+  };
+
+  // Callback ref for local video preview PIP
+  const setLocalVideoRef = (element) => {
+    localVideoRef.current = element;
+    if (element && localStream) {
+      if (element.srcObject !== localStream) {
+        element.srcObject = localStream;
+      }
+      element.play().catch(() => {});
+    }
+  };
+
+  // Synchronize when remoteStream reference changes
+  useEffect(() => {
+    if (remoteStream) {
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = remoteStream;
+        remoteVideoRef.current.play().catch(() => setAudioBlocked(true));
+      }
+      if (remoteAudioRef.current) {
+        remoteAudioRef.current.srcObject = remoteStream;
+        remoteAudioRef.current.play().catch(() => setAudioBlocked(true));
+      }
+    }
+  }, [remoteStream]);
+
+  // Synchronize when localStream changes
   useEffect(() => {
     if (localVideoRef.current && localStream) {
       localVideoRef.current.srcObject = localStream;
+      localVideoRef.current.play().catch(() => {});
     }
   }, [localStream]);
-
-  // Attach remote stream to remote video and audio elements
-  useEffect(() => {
-    if (remoteVideoRef.current && remoteStream) {
-      remoteVideoRef.current.srcObject = remoteStream;
-    }
-    if (remoteAudioRef.current && remoteStream) {
-      remoteAudioRef.current.srcObject = remoteStream;
-      remoteAudioRef.current.play().catch(() => {});
-    }
-  }, [remoteStream]);
 
   // Duration timer once call is connected
   useEffect(() => {
@@ -47,6 +91,17 @@ export function ActiveCallModal({
       if (interval) clearInterval(interval);
     };
   }, [callStatus]);
+
+  // User gesture handler to unlock mobile audio autoplay if blocked by browser
+  const handleUnlockAudio = () => {
+    setAudioBlocked(false);
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.play().catch(() => {});
+    }
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.play().catch(() => {});
+    }
+  };
 
   const toggleMic = () => {
     if (localStream) {
@@ -78,22 +133,68 @@ export function ActiveCallModal({
   const otherName = call.otherUserName || call.receiverName || call.callerName || 'User';
   const otherPhoto = call.otherUserPhoto || call.receiverPhoto || call.callerPhoto || '';
 
+  // Check if remote stream has active video track
+  const hasRemoteVideoTrack = Boolean(
+    remoteStream && remoteStream.getVideoTracks && remoteStream.getVideoTracks().length > 0 && remoteStream.getVideoTracks()[0].enabled
+  );
+
   return (
-    <div className="call-overlay" role="dialog" aria-modal="true" aria-label="Active Call">
+    <div
+      className="call-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Active Call"
+      onClick={audioBlocked ? handleUnlockAudio : undefined}
+    >
       <div className="active-call-modal">
+        {/* Mobile Browser Autoplay Unmute Banner */}
+        {audioBlocked && (
+          <div
+            onClick={handleUnlockAudio}
+            style={{
+              position: 'absolute',
+              top: 16,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 100,
+              background: 'rgba(37, 99, 235, 0.95)',
+              color: '#fff',
+              padding: '8px 16px',
+              borderRadius: 24,
+              fontSize: '0.85rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+              animation: 'pulse 1.5s infinite'
+            }}
+          >
+            <Volume2 size={18} />
+            <span>Tap anywhere to enable sound</span>
+          </div>
+        )}
+
         {isVideoCall ? (
           /* Video Call Stage */
           <div className="call-video-stage">
-            {/* Remote video */}
-            {remoteStream ? (
-              <video
-                ref={remoteVideoRef}
-                autoPlay
-                playsInline
-                className="remote-video"
-              />
-            ) : (
-              /* Waiting for remote stream visual */
+            {/* Remote video element - ALWAYS rendered so ref never misses attachment */}
+            <video
+              ref={setRemoteVideoRef}
+              autoPlay
+              playsInline
+              className="remote-video"
+              style={{
+                display: hasRemoteVideoTrack ? 'block' : 'none',
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover'
+              }}
+            />
+
+            {/* Waiting/Connecting Avatar placeholder when remote video has not arrived yet */}
+            {!hasRemoteVideoTrack && (
               <div className="call-audio-stage" style={{ width: '100%', height: '100%' }}>
                 <div className="audio-call-avatar-wrapper">
                   <div className="audio-pulse-glow" />
@@ -101,8 +202,11 @@ export function ActiveCallModal({
                 </div>
                 <h3 className="audio-call-name">{otherName}</h3>
                 <span className="audio-call-status">
-                  {callStatus === 'connected' ? 'Connecting video...' : 'Calling...'}
+                  {callStatus === 'connected' ? 'Connected (waiting for video...)' : 'Connecting video...'}
                 </span>
+                {callStatus === 'connected' && (
+                  <span className="audio-call-timer">{formatTimer(duration)}</span>
+                )}
               </div>
             )}
 
@@ -110,7 +214,7 @@ export function ActiveCallModal({
             {localStream && localStream.getVideoTracks().length > 0 && !isVideoOff && (
               <div className="local-video-pip">
                 <video
-                  ref={localVideoRef}
+                  ref={setLocalVideoRef}
                   autoPlay
                   playsInline
                   muted
@@ -173,8 +277,22 @@ export function ActiveCallModal({
             <PhoneOff size={24} />
           </button>
         </div>
-        {/* Invisible audio element to ensure remote voice is always played during audio & video calls */}
-        <audio ref={remoteAudioRef} autoPlay playsInline style={{ display: 'none' }} />
+
+        {/* Remote audio playback element - position fixed with 0.01 opacity so mobile browser thread never pauses it */}
+        <audio
+          ref={setRemoteAudioRef}
+          autoPlay
+          playsInline
+          style={{
+            position: 'fixed',
+            bottom: 0,
+            right: 0,
+            width: 1,
+            height: 1,
+            opacity: 0.01,
+            pointerEvents: 'none'
+          }}
+        />
       </div>
     </div>
   );
