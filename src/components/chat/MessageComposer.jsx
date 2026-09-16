@@ -14,11 +14,15 @@ export function MessageComposer({
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const textareaRef = useRef(null);
 
-  // Auto resize textarea
+  // Auto resize textarea (guaranteeing single-line slim height when empty)
   useEffect(() => {
     if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 100)}px`;
+      if (!text) {
+        textareaRef.current.style.height = '22px';
+      } else {
+        textareaRef.current.style.height = 'auto';
+        textareaRef.current.style.height = `${Math.min(Math.max(textareaRef.current.scrollHeight, 22), 100)}px`;
+      }
     }
   }, [text]);
 
