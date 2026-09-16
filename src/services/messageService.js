@@ -11,7 +11,10 @@ import {
   writeBatch,
   where,
   getDocs,
-  deleteField
+  getDoc,
+  deleteField,
+  arrayUnion,
+  arrayRemove
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from './firebase';
 
@@ -135,4 +138,81 @@ export async function setTypingState(conversationId, userId, isTyping) {
   } catch (error) {
     // Non-fatal
   }
+}
+
+/**
+ * Remove message for current user only ("Delete for me")
+ */
+export async function deleteMessageForMe(conversationId, messageId, userId) {
+  if (!isFirebaseConfigured || !db || !conversationId || !messageId || !userId) return;
+  const msgRef = doc(db, 'conversations', conversationId, 'messages', messageId);
+  await updateDoc(msgRef, {
+    deletedFor: arrayUnion(userId)
+  });
+}
+
+/**
+ * Revoke message for both users ("Delete for everyone")
+ */
+export async function deleteMessageForEveryone(conversationId, messageId, senderId) {
+  if (!isFirebaseConfigured || !db || !conversationId || !messageId || !senderId) return;
+  const msgRef = doc(db, 'conversations', conversationId, 'messages', messageId);
+  const convRef = doc(db, 'conversations', conversationId);
+
+  // 1. Mark message as deleted for everyone and clear content
+  await updateDoc(msgRef, {
+    deletedForEveryone: true,
+    text: '',
+    reactions: {}
+  });
+
+  // 2. If this was the lastMessage in conversation, update summary
+  try {
+    const convSnap = await getDoc(convRef);
+    if (convSnap.exists()) {
+      const convData = convSnap.data();
+      if (convData.lastMessage?.senderId === senderId) {
+        await updateDoc(convRef, {
+          'lastMessage.text': '🚫 This message was deleted',
+          'lastMessage.deletedForEveryone': true
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('Could not update conversation lastMessage:', err);
+  }
+}
+
+/**
+ * Toggle an emoji reaction on a message (WhatsApp / Telegram style: 1 reaction per user)
+ */
+export async function toggleMessageReaction(conversationId, messageId, userId, emoji) {
+  if (!isFirebaseConfigured || !db || !conversationId || !messageId || !userId || !emoji) return;
+  const msgRef = doc(db, 'conversations', conversationId, 'messages', messageId);
+
+  const msgSnap = await getDoc(msgRef);
+  if (!msgSnap.exists()) return;
+
+  const msgData = msgSnap.data();
+  const currentReactions = { ...(msgData.reactions || {}) };
+
+  const userList = currentReactions[emoji] || [];
+  const hasReactedWithThisEmoji = userList.includes(userId);
+
+  // Remove this user from all existing reactions on this message
+  Object.keys(currentReactions).forEach((key) => {
+    currentReactions[key] = (currentReactions[key] || []).filter((uid) => uid !== userId);
+    if (currentReactions[key].length === 0) {
+      delete currentReactions[key];
+    }
+  });
+
+  // If user didn't already have this reaction, add it
+  if (!hasReactedWithThisEmoji) {
+    currentReactions[emoji] = [...(currentReactions[emoji] || []), userId];
+  }
+
+  await updateDoc(msgRef, {
+    reactions: currentReactions
+  });
 }

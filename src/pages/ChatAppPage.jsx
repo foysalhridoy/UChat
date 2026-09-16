@@ -27,7 +27,12 @@ import { UserSearchModal } from '../components/chat/UserSearchModal';
 import { ProfileSettingsModal } from '../components/settings/ProfileSettingsModal';
 import { Modal } from '../components/common/Modal';
 import { getOrCreateConversation } from '../services/conversationService';
-import { sendMessage } from '../services/messageService';
+import {
+  sendMessage,
+  deleteMessageForMe,
+  deleteMessageForEveryone,
+  toggleMessageReaction
+} from '../services/messageService';
 import { formatLastSeen } from '../utils/formatting';
 
 export function ChatAppPage() {
@@ -112,6 +117,41 @@ export function ChatAppPage() {
       console.error('Error sending message:', err);
       showToast('Failed to send message. Please check connection.', 'error');
       throw err;
+    }
+  };
+
+  // Message reaction handler
+  const handleReact = async (messageId, emoji) => {
+    if (!activeConversationId || !currentUser?.uid) return;
+    try {
+      await toggleMessageReaction(activeConversationId, messageId, currentUser.uid, emoji);
+    } catch (err) {
+      console.error('Error reacting to message:', err);
+      showToast('Could not update reaction', 'error');
+    }
+  };
+
+  // Delete for me handler
+  const handleDeleteForMe = async (messageId) => {
+    if (!activeConversationId || !currentUser?.uid) return;
+    try {
+      await deleteMessageForMe(activeConversationId, messageId, currentUser.uid);
+      showToast('Message removed for you', 'info');
+    } catch (err) {
+      console.error('Error deleting message for me:', err);
+      showToast('Could not delete message', 'error');
+    }
+  };
+
+  // Delete for everyone handler
+  const handleDeleteForEveryone = async (messageId) => {
+    if (!activeConversationId || !currentUser?.uid) return;
+    try {
+      await deleteMessageForEveryone(activeConversationId, messageId, currentUser.uid);
+      showToast('Message deleted for everyone', 'info');
+    } catch (err) {
+      console.error('Error deleting message for everyone:', err);
+      showToast('Could not delete message', 'error');
     }
   };
 
@@ -260,6 +300,9 @@ export function ChatAppPage() {
                 messages={messages}
                 currentUserId={currentUser?.uid}
                 targetUser={targetUser}
+                onReact={handleReact}
+                onDeleteForMe={handleDeleteForMe}
+                onDeleteForEveryone={handleDeleteForEveryone}
               />
 
               {isTargetTyping && (

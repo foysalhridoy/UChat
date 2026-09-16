@@ -4,8 +4,20 @@ import { formatDateDivider, toDate } from '../../utils/formatting';
 import { EmptyState } from '../common/EmptyState';
 import { MessageSquare, Sparkles } from 'lucide-react';
 
-export function MessageList({ messages, currentUserId, targetUser }) {
+export function MessageList({
+  messages,
+  currentUserId,
+  targetUser,
+  onReact,
+  onDeleteForMe,
+  onDeleteForEveryone
+}) {
   const containerRef = useRef(null);
+
+  // Filter out messages that the current user chose to "Delete for me"
+  const visibleMessages = messages.filter(
+    (msg) => !msg.deletedFor || !msg.deletedFor.includes(currentUserId)
+  );
 
   // Auto scroll within container ONLY (never triggers window/body scroll jumps)
   const scrollToBottom = (behavior = 'smooth') => {
@@ -19,10 +31,10 @@ export function MessageList({ messages, currentUserId, targetUser }) {
 
   useEffect(() => {
     // Immediate scroll on first load, smooth on subsequent messages
-    scrollToBottom(messages.length > 20 ? 'auto' : 'smooth');
-  }, [messages]);
+    scrollToBottom(visibleMessages.length > 20 ? 'auto' : 'smooth');
+  }, [visibleMessages.length]);
 
-  if (messages.length === 0) {
+  if (visibleMessages.length === 0) {
     const targetName = targetUser?.displayName || targetUser?.username || 'this user';
     return (
       <div ref={containerRef} className="message-list-container">
@@ -40,7 +52,7 @@ export function MessageList({ messages, currentUserId, targetUser }) {
 
   return (
     <div ref={containerRef} className="message-list-container" role="log" aria-live="polite">
-      {messages.map((message) => {
+      {visibleMessages.map((message) => {
         const msgDate = toDate(message.createdAt);
         const dateString = msgDate ? msgDate.toDateString() : '';
         const showDateDivider = dateString && dateString !== lastDateString;
@@ -62,6 +74,10 @@ export function MessageList({ messages, currentUserId, targetUser }) {
             <MessageBubble
               message={message}
               isCurrentUser={isCurrentUser}
+              currentUserId={currentUserId}
+              onReact={onReact}
+              onDeleteForMe={onDeleteForMe}
+              onDeleteForEveryone={onDeleteForEveryone}
             />
           </React.Fragment>
         );

@@ -305,6 +305,201 @@
   margin-left: 2px;
 }
 
+.message-bubble-wrapper {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Action trigger bar on hover / focus */
+.message-actions-bar {
+  position: absolute;
+  top: -26px;
+  display: none;
+  align-items: center;
+  gap: 3px;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  padding: 2px 5px;
+  box-shadow: var(--shadow-md);
+  z-index: 10;
+  animation: messageAppear 140ms ease-out;
+}
+
+.message-row.outgoing .message-actions-bar {
+  right: 4px;
+}
+
+.message-row.incoming .message-actions-bar {
+  left: 4px;
+}
+
+.message-row:hover .message-actions-bar,
+.message-row:focus-within .message-actions-bar {
+  display: flex;
+}
+
+@media (max-width: 767px) {
+  .message-row.outgoing .message-actions-bar {
+    right: 0px;
+    top: -24px;
+  }
+  .message-row.incoming .message-actions-bar {
+    left: 0px;
+    top: -24px;
+  }
+}
+
+.message-action-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 3px 5px;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+}
+
+.message-action-btn:hover {
+  color: var(--text-primary);
+  background-color: var(--bg-tertiary);
+}
+
+.message-action-btn.delete-btn:hover {
+  color: var(--danger, #ef4444);
+}
+
+/* Floating Emoji Reaction Popover */
+.message-reaction-picker {
+  position: absolute;
+  top: -42px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 24px;
+  padding: 4px 8px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.18);
+  z-index: 25;
+  animation: popIn 180ms cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.message-row.outgoing .message-reaction-picker {
+  right: 0;
+}
+
+.message-row.incoming .message-reaction-picker {
+  left: 0;
+}
+
+.reaction-emoji-btn {
+  font-size: 1.18rem;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 2px 3px;
+  border-radius: var(--radius-sm);
+  transition: transform var(--transition-fast);
+  line-height: 1;
+}
+
+.reaction-emoji-btn:hover {
+  transform: scale(1.32);
+}
+
+/* Reaction Badges Tray on the bottom edge */
+.message-reactions-tray {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: -6px;
+  z-index: 5;
+}
+
+.message-row.outgoing .message-reactions-tray {
+  justify-content: flex-end;
+  margin-right: 6px;
+}
+
+.message-row.incoming .message-reactions-tray {
+  justify-content: flex-start;
+  margin-left: 6px;
+}
+
+.reaction-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border-radius: 12px;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  font-size: 0.72rem;
+  cursor: pointer;
+  user-select: none;
+  transition: all var(--transition-fast);
+  line-height: 1.2;
+  color: var(--text-primary);
+}
+
+.reaction-badge:hover {
+  transform: scale(1.08);
+}
+
+.reaction-badge.active {
+  background-color: var(--primary-subtle);
+  border-color: var(--primary);
+  font-weight: 700;
+}
+
+.reaction-emoji {
+  font-size: 0.85rem;
+}
+
+.reaction-count {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.reaction-badge.active .reaction-count {
+  color: var(--primary);
+}
+
+/* Deleted message styling (WhatsApp style) */
+.message-row.deleted .message-bubble {
+  background: var(--bg-secondary) !important;
+  color: var(--text-muted) !important;
+  border: 1px dashed var(--border-subtle) !important;
+  box-shadow: none;
+  opacity: 0.85;
+}
+
+.message-deleted-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-style: italic;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+}
+
+.message-deleted-content .deleted-icon {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+@keyframes popIn {
+  from { opacity: 0; transform: scale(0.85) translateY(4px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
 @keyframes messageAppear {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
