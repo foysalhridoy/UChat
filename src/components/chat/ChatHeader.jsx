@@ -107,7 +107,10 @@ export function ChatHeader({
       {/* Header Actions */}
       <div className="chat-header-actions">
         <button
-          onClick={() => onStartCall && onStartCall(liveUser || targetUser, 'audio')}
+          onClick={() => {
+            const targetUserObj = { ...(targetUser || {}), ...(liveUser || {}), uid: targetUserId, id: targetUserId };
+            onStartCall && onStartCall(targetUserObj, 'audio');
+          }}
           className="btn btn-ghost btn-icon call-btn"
           title="Voice call"
           aria-label="Voice call"
@@ -116,7 +119,10 @@ export function ChatHeader({
         </button>
 
         <button
-          onClick={() => onStartCall && onStartCall(liveUser || targetUser, 'video')}
+          onClick={() => {
+            const targetUserObj = { ...(targetUser || {}), ...(liveUser || {}), uid: targetUserId, id: targetUserId };
+            onStartCall && onStartCall(targetUserObj, 'video');
+          }}
           className="btn btn-ghost btn-icon call-btn"
           title="Video call"
           aria-label="Video call"

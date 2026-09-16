@@ -160,16 +160,23 @@ export function ChatAppPage() {
   };
 
   const handleStartCall = async (target, type = 'audio') => {
-    if (!currentUser || !target) return;
+    const otherUid = target?.uid || target?.id || targetUid;
+    if (!currentUser || !otherUid) {
+      showToast('Could not identify user for call', 'error');
+      return;
+    }
+    if (currentUser.uid === otherUid) {
+      showToast('You cannot call yourself', 'warning');
+      return;
+    }
     if (activeCall) {
       showToast('You are already in a call', 'warning');
       return;
     }
 
     try {
-      const otherUid = target.uid || target.id;
-      const otherName = target.displayName || target.username || 'User';
-      const otherPhoto = target.photoURL || '';
+      const otherName = target.displayName || target.username || targetUser?.displayName || targetUser?.username || 'User';
+      const otherPhoto = target.photoURL || targetUser?.photoURL || '';
 
       setActiveCall({
         type,
@@ -204,7 +211,13 @@ export function ChatAppPage() {
       setCallLocalStream(session.localStream);
     } catch (err) {
       console.error('Failed to initiate call:', err);
-      showToast('Could not access microphone/camera. Please check permissions.', 'error');
+      if (err.name === 'NotAllowedError') {
+        showToast('Microphone or camera permission was denied in your browser.', 'error');
+      } else if (err.name === 'NotFoundError') {
+        showToast('No microphone or camera device found on this device.', 'error');
+      } else {
+        showToast(err.message || 'Could not start call. Please check device permissions.', 'error');
+      }
       cleanupCallUI();
     }
   };

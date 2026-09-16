@@ -2,7 +2,6 @@ import {
   collection,
   doc,
   setDoc,
-  getDoc,
   updateDoc,
   onSnapshot,
   addDoc,
@@ -103,9 +102,9 @@ export async function getLocalMediaStream(type = 'video') {
         : false
     });
   } catch (err) {
-    // If video fails (e.g. no camera attached), fallback to audio-only
+    // If video fails (e.g. no camera attached or permission denied for video), fallback to audio-only
     if (wantsVideo) {
-      console.warn('Camera not accessible, attempting audio-only fallback:', err);
+      console.warn('Camera not accessible, falling back to audio-only:', err);
       return await navigator.mediaDevices.getUserMedia({
         audio: true,
         video: false
@@ -131,6 +130,11 @@ export async function initiateCall({
     throw new Error('Firebase is not configured.');
   }
 
+  const receiverUid = receiver.uid || receiver.id;
+  if (!receiverUid) {
+    throw new Error('Recipient UID is missing.');
+  }
+
   playRingtone('outgoing');
 
   // 1. Get local stream
@@ -139,12 +143,10 @@ export async function initiateCall({
   // 2. Initialize Peer Connection
   const peerConnection = new RTCPeerConnection(rtcConfig);
 
-  // Add tracks
   localStream.getTracks().forEach((track) => {
     peerConnection.addTrack(track, localStream);
   });
 
-  // Handle incoming remote tracks
   peerConnection.ontrack = (event) => {
     if (event.streams && event.streams[0]) {
       stopRingtone();
@@ -159,11 +161,10 @@ export async function initiateCall({
   const offerCandidatesCol = collection(db, 'calls', callId, 'offerCandidates');
   const answerCandidatesCol = collection(db, 'calls', callId, 'answerCandidates');
 
-  // Save local ICE candidates to offerCandidates
   peerConnection.onicecandidate = (event) => {
     if (event.candidate) {
       addDoc(offerCandidatesCol, event.candidate.toJSON()).catch((e) => {
-        console.warn('Error adding ICE candidate:', e);
+        console.warn('Error adding offer ICE candidate:', e);
       });
     }
   };
@@ -174,25 +175,50 @@ export async function initiateCall({
 
   const callData = {
     callId,
-    callerId: caller.uid,
+    callerId: caller.uid || caller.id || '',
     callerName: caller.displayName || caller.username || 'User',
     callerPhoto: caller.photoURL || '',
-    receiverId: receiver.uid || receiver.id,
+    receiverId: receiverUid,
     receiverName: receiver.displayName || receiver.username || 'User',
     receiverPhoto: receiver.photoURL || '',
-    type,
+    type: type || 'audio',
     status: 'calling', // 'calling' | 'active' | 'rejected' | 'ended'
     createdAt: serverTimestamp(),
     offer: {
-      sdp: offerDescription.sdp,
-      type: offerDescription.type
+      sdp: offerDescription.sdp || '',
+      type: offerDescription.type || 'offer'
     }
   };
 
   await setDoc(callDocRef, callData);
 
+  // Queue remote ICE candidates until remoteDescription is set
+  const candidateQueue = [];
+  let isRemoteDescriptionSet = false;
+
+  const processCandidate = (candidateData) => {
+    const candidate = new RTCIceCandidate(candidateData);
+    if (isRemoteDescriptionSet) {
+      peerConnection.addIceCandidate(candidate).catch((e) => {
+        console.warn('Error adding remote ICE candidate:', e);
+      });
+    } else {
+      candidateQueue.push(candidate);
+    }
+  };
+
+  const flushCandidates = () => {
+    isRemoteDescriptionSet = true;
+    while (candidateQueue.length > 0) {
+      const cand = candidateQueue.shift();
+      peerConnection.addIceCandidate(cand).catch((e) => {
+        console.warn('Error flushing ICE candidate:', e);
+      });
+    }
+  };
+
   // 5. Listen for Receiver Answer or Status Change
-  const unsubCall = onSnapshot(callDocRef, (snapshot) => {
+  const unsubCall = onSnapshot(callDocRef, async (snapshot) => {
     const data = snapshot.data();
     if (!data) return;
 
@@ -208,10 +234,13 @@ export async function initiateCall({
       stopRingtone();
       if (onCallActive) onCallActive();
       if (data.answer && !peerConnection.currentRemoteDescription) {
-        const answerDescription = new RTCSessionDescription(data.answer);
-        peerConnection.setRemoteDescription(answerDescription).catch((e) => {
+        try {
+          const answerDescription = new RTCSessionDescription(data.answer);
+          await peerConnection.setRemoteDescription(answerDescription);
+          flushCandidates();
+        } catch (e) {
           console.warn('Set remote description failed:', e);
-        });
+        }
       }
     }
   });
@@ -220,10 +249,7 @@ export async function initiateCall({
   const unsubAnswerCandidates = onSnapshot(answerCandidatesCol, (snapshot) => {
     snapshot.docChanges().forEach((change) => {
       if (change.type === 'added') {
-        const candidate = new RTCIceCandidate(change.doc.data());
-        peerConnection.addIceCandidate(candidate).catch((e) => {
-          console.warn('Error adding remote ICE candidate:', e);
-        });
+        processCandidate(change.doc.data());
       }
     });
   });
@@ -265,9 +291,9 @@ export async function answerCall({
 
   stopRingtone();
 
-  const callDocRef = doc(db, 'calls', call.callId);
-  const offerCandidatesCol = collection(db, 'calls', call.callId, 'offerCandidates');
-  const answerCandidatesCol = collection(db, 'calls', call.callId, 'answerCandidates');
+  const callDocRef = doc(db, 'calls', call.callId || call.id);
+  const offerCandidatesCol = collection(db, 'calls', call.callId || call.id, 'offerCandidates');
+  const answerCandidatesCol = collection(db, 'calls', call.callId || call.id, 'answerCandidates');
 
   // 1. Acquire local stream
   const localStream = await getLocalMediaStream(call.type);
@@ -285,7 +311,6 @@ export async function answerCall({
     }
   };
 
-  // 3. Save local answer ICE candidates
   peerConnection.onicecandidate = (event) => {
     if (event.candidate) {
       addDoc(answerCandidatesCol, event.candidate.toJSON()).catch((e) => {
@@ -294,12 +319,12 @@ export async function answerCall({
     }
   };
 
-  // 4. Set remote offer & create Answer
+  // 3. Set remote offer & create Answer
   await peerConnection.setRemoteDescription(new RTCSessionDescription(call.offer));
   const answerDescription = await peerConnection.createAnswer();
   await peerConnection.setLocalDescription(answerDescription);
 
-  // 5. Update call doc with Answer and set status to active
+  // 4. Update call doc with Answer and set status to active
   await updateDoc(callDocRef, {
     status: 'active',
     answer: {
@@ -308,7 +333,7 @@ export async function answerCall({
     }
   });
 
-  // 6. Listen for caller's ICE candidates
+  // 5. Listen for caller's ICE candidates
   const unsubOfferCandidates = onSnapshot(offerCandidatesCol, (snapshot) => {
     snapshot.docChanges().forEach((change) => {
       if (change.type === 'added') {
@@ -320,7 +345,7 @@ export async function answerCall({
     });
   });
 
-  // 7. Listen for call termination
+  // 6. Listen for call termination
   const unsubCall = onSnapshot(callDocRef, (snapshot) => {
     const data = snapshot.data();
     if (!data || data.status === 'ended' || data.status === 'rejected') {
@@ -345,7 +370,7 @@ export async function answerCall({
   };
 
   return {
-    callId: call.callId,
+    callId: call.callId || call.id,
     localStream,
     peerConnection,
     endCall
@@ -381,18 +406,18 @@ export function subscribeToIncomingCalls(userId, onIncomingCall) {
 
   return onSnapshot(q, (snapshot) => {
     const calls = [];
-    const now = Date.now();
-
     snapshot.forEach((docSnap) => {
       const data = docSnap.data();
-      const createdAtMillis = data.createdAt?.toMillis ? data.createdAt.toMillis() : now;
-      // Only notify if call is fresh (< 45 seconds old)
-      if (now - createdAtMillis < 45000) {
-        calls.push({ id: docSnap.id, ...data });
-      }
+      calls.push({ id: docSnap.id, callId: docSnap.id, ...data });
     });
 
     if (calls.length > 0) {
+      // Sort newest first
+      calls.sort((a, b) => {
+        const tA = a.createdAt?.toMillis ? a.createdAt.toMillis() : Date.now();
+        const tB = b.createdAt?.toMillis ? b.createdAt.toMillis() : Date.now();
+        return tB - tA;
+      });
       onIncomingCall(calls[0]);
     } else {
       onIncomingCall(null);

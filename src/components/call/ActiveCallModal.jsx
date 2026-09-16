@@ -15,6 +15,7 @@ export function ActiveCallModal({
 
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
+  const remoteAudioRef = useRef(null);
 
   // Attach local stream to preview video
   useEffect(() => {
@@ -23,10 +24,14 @@ export function ActiveCallModal({
     }
   }, [localStream]);
 
-  // Attach remote stream to remote video
+  // Attach remote stream to remote video and audio elements
   useEffect(() => {
     if (remoteVideoRef.current && remoteStream) {
       remoteVideoRef.current.srcObject = remoteStream;
+    }
+    if (remoteAudioRef.current && remoteStream) {
+      remoteAudioRef.current.srcObject = remoteStream;
+      remoteAudioRef.current.play().catch(() => {});
     }
   }, [remoteStream]);
 
@@ -168,6 +173,8 @@ export function ActiveCallModal({
             <PhoneOff size={24} />
           </button>
         </div>
+        {/* Invisible audio element to ensure remote voice is always played during audio & video calls */}
+        <audio ref={remoteAudioRef} autoPlay playsInline style={{ display: 'none' }} />
       </div>
     </div>
   );
