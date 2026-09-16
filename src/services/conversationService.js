@@ -35,9 +35,15 @@ export async function getOrCreateConversation(currentUser, targetUser) {
 
   const convId = getConversationId(currentUid, targetUid);
   const convRef = doc(db, 'conversations', convId);
-  const convSnap = await getDoc(convRef);
 
-  if (convSnap.exists()) {
+  let convSnap = null;
+  try {
+    convSnap = await getDoc(convRef);
+  } catch (err) {
+    console.warn('Checking conversation existing state:', err);
+  }
+
+  if (convSnap && convSnap.exists()) {
     return { id: convSnap.id, ...convSnap.data() };
   }
 
@@ -73,7 +79,7 @@ export async function getOrCreateConversation(currentUser, targetUser) {
     updatedAt: serverTimestamp()
   };
 
-  await setDoc(convRef, newConvData);
+  await setDoc(convRef, newConvData, { merge: true });
   return { id: convId, ...newConvData };
 }
 
