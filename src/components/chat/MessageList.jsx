@@ -13,17 +13,20 @@ export function MessageList({
   onDeleteForEveryone
 }) {
   const containerRef = useRef(null);
+  const messagesEndRef = useRef(null);
 
   // Filter out messages that the current user chose to "Delete for me"
   const visibleMessages = messages.filter(
     (msg) => !msg.deletedFor || !msg.deletedFor.includes(currentUserId)
   );
 
-  // Auto scroll within container ONLY (never triggers window/body scroll jumps)
+  // Auto scroll within container ONLY (ensures last message is fully above typing box / keyboard)
   const scrollToBottom = (behavior = 'smooth') => {
-    if (containerRef.current) {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior, block: 'end' });
+    } else if (containerRef.current) {
       containerRef.current.scrollTo({
-        top: containerRef.current.scrollHeight,
+        top: containerRef.current.scrollHeight + 300,
         behavior
       });
     }
@@ -32,7 +35,30 @@ export function MessageList({
   useEffect(() => {
     // Immediate scroll on first load, smooth on subsequent messages
     scrollToBottom(visibleMessages.length > 20 ? 'auto' : 'smooth');
+
+    // Multi-tick scroll to account for layout reflow and virtual keyboard adjustments
+    const t1 = setTimeout(() => scrollToBottom('smooth'), 60);
+    const t2 = setTimeout(() => scrollToBottom('smooth'), 180);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
   }, [visibleMessages.length]);
+
+  // Keep message bottom in view if virtual keyboard resizes viewport
+  useEffect(() => {
+    const handleViewportResize = () => {
+      scrollToBottom('auto');
+    };
+
+    if (typeof window !== 'undefined' && window.visualViewport) {
+      window.visualViewport.addEventListener('resize', handleViewportResize);
+      return () => {
+        window.visualViewport.removeEventListener('resize', handleViewportResize);
+      };
+    }
+  }, []);
 
   if (visibleMessages.length === 0) {
     const targetName = targetUser?.displayName || targetUser?.username || 'this user';
@@ -82,6 +108,8 @@ export function MessageList({
           </React.Fragment>
         );
       })}
+      {/* Bottom buffer anchor so last message is never cut off by composer/keyboard */}
+      <div ref={messagesEndRef} className="messages-bottom-anchor" />
     </div>
   );
 }

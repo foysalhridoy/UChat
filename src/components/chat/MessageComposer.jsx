@@ -42,6 +42,22 @@ export function MessageComposer({
       if (typeof window !== 'undefined' && window.scrollY !== 0) {
         window.scrollTo(0, 0);
       }
+      // Guarantee newly sent message is scrolled completely above the composer
+      setTimeout(() => {
+        const anchor = document.querySelector('.messages-bottom-anchor');
+        if (anchor) {
+          anchor.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        } else {
+          const list = document.querySelector('.message-list-container');
+          if (list) list.scrollTo({ top: list.scrollHeight + 300, behavior: 'smooth' });
+        }
+      }, 50);
+      setTimeout(() => {
+        const anchor = document.querySelector('.messages-bottom-anchor');
+        if (anchor) {
+          anchor.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
+      }, 180);
     } catch (err) {
       console.error('Failed to send message:', err);
     } finally {
