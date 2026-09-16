@@ -55,26 +55,26 @@
 }
 
 [data-theme="dark"] {
-  /* Dark Theme — Deep Ocean Navy */
-  --bg-primary: #021024;
-  --bg-secondary: #052659;
-  --bg-tertiary: #0a3070;
-  --bg-elevated: #0d3a85;
-  --bg-hover: #103d8a;
-  --bg-active: #154698;
+  /* Dark Theme — Neutral Dark Slate + Steel Blue Accents */
+  --bg-primary: #0d1117;
+  --bg-secondary: #161b22;
+  --bg-tertiary: #1c2128;
+  --bg-elevated: #21262d;
+  --bg-hover: #272e37;
+  --bg-active: #2d3440;
 
-  --border-subtle: #0a2f6e;
-  --border-strong: #163d88;
+  --border-subtle: #1e252d;
+  --border-strong: #2a3240;
   --border-focus: #7DA0CA;
 
-  --text-primary: #C1E8FF;
-  --text-secondary: #7DA0CA;
-  --text-muted: #5483B3;
-  --text-inverse: #021024;
+  --text-primary: #e6edf3;
+  --text-secondary: #8da4bf;
+  --text-muted: #4d6278;
+  --text-inverse: #0d1117;
 
   --primary: #5483B3;
   --primary-hover: #7DA0CA;
-  --primary-subtle: rgba(84, 131, 179, 0.2);
+  --primary-subtle: rgba(84, 131, 179, 0.18);
   --primary-text: #7DA0CA;
 
   --bubble-outgoing: #5483B3;
@@ -82,20 +82,20 @@
   --bubble-outgoing-meta: rgba(193, 232, 255, 0.65);
   --bubble-outgoing-seen: #C1E8FF;
 
-  --bubble-incoming: #052659;
-  --bubble-incoming-text: #C1E8FF;
-  --bubble-incoming-meta: #5483B3;
-  --bubble-incoming-border: #0a2f6e;
+  --bubble-incoming: #161b22;
+  --bubble-incoming-text: #e6edf3;
+  --bubble-incoming-meta: #4d6278;
+  --bubble-incoming-border: #1e252d;
 
   --online: #4ade80;
-  --offline: #5483B3;
+  --offline: #4d6278;
   --error: #f87171;
   --error-bg: rgba(239, 68, 68, 0.12);
   --warning: #fbbf24;
   --success: #4ade80;
 
-  --shadow-sm: 0 1px 3px 0 rgb(2 16 36 / 0.5);
-  --shadow-md: 0 4px 8px -2px rgb(2 16 36 / 0.6), 0 2px 4px -2px rgb(2 16 36 / 0.45);
-  --shadow-lg: 0 10px 20px -4px rgb(2 16 36 / 0.7), 0 4px 8px -4px rgb(2 16 36 / 0.5);
-  --shadow-xl: 0 20px 32px -6px rgb(2 16 36 / 0.8), 0 8px 12px -6px rgb(2 16 36 / 0.6);
+  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.4);
+  --shadow-md: 0 4px 8px -2px rgb(0 0 0 / 0.5), 0 2px 4px -2px rgb(0 0 0 / 0.35);
+  --shadow-lg: 0 10px 20px -4px rgb(0 0 0 / 0.6), 0 4px 8px -4px rgb(0 0 0 / 0.4);
+  --shadow-xl: 0 20px 32px -6px rgb(0 0 0 / 0.7), 0 8px 12px -6px rgb(0 0 0 / 0.5);
 }
