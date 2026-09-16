@@ -178,7 +178,7 @@ export function MessageBubble({
               {isCurrentUser && !isDeleted && (
                 <span className="seen-icon" title={message.seen ? 'Seen' : 'Sent'}>
                   {message.seen ? (
-                    <CheckCheck size={14} color="#93c5fd" />
+                    <CheckCheck size={14} color="var(--bubble-outgoing-seen, #64b5f6)" />
                   ) : (
                     <Check size={14} />
                   )}
