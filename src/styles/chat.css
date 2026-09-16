@@ -599,16 +599,47 @@
   background-color: var(--bg-tertiary);
   border: 1px solid var(--border-subtle);
   border-radius: 22px;
-  padding: 4px 10px;
+  padding: 3px 10px 3px 6px;
   transition: all var(--transition-fast);
-  min-height: 38px;
+  min-height: 40px;
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.03);
+  gap: 4px;
 }
 
 .composer-pill:focus-within {
   border-color: var(--border-focus);
   background-color: var(--bg-secondary);
   box-shadow: 0 0 0 2.5px var(--primary-subtle);
+}
+
+/* Compact, proportional emoji button */
+.composer-emoji-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-bottom: 1px;
+  padding: 0;
+  transition: color var(--transition-fast), background-color var(--transition-fast), transform var(--transition-fast);
+}
+
+.composer-emoji-btn:hover,
+.composer-emoji-btn.active {
+  color: var(--primary);
+  background-color: var(--bg-hover, rgba(255, 255, 255, 0.08));
+}
+
+.composer-emoji-btn:active {
+  transform: scale(0.92);
 }
 
 .composer-textarea,
@@ -631,8 +662,9 @@
   resize: none;
   max-height: 100px;
   min-height: 22px;
-  line-height: 1.38;
-  padding: 4px 2px;
+  line-height: 1.4;
+  padding: 6px 4px 6px 2px;
+  margin-bottom: 1px;
 }
 
 .composer-textarea::placeholder {
@@ -641,10 +673,10 @@
 
 /* Floating High-End Round Send Button */
 .composer-send-btn {
-  width: 38px;
-  height: 38px;
-  min-width: 38px;
-  min-height: 38px;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
   border-radius: var(--radius-full);
   background: linear-gradient(135deg, var(--primary), #4338ca);
   color: #ffffff;

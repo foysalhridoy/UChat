@@ -117,20 +117,12 @@ export function MessageComposer({
           {/* Emoji Picker Button */}
           <button
             type="button"
+            className={`composer-emoji-btn ${showEmojiPicker ? 'active' : ''}`}
             onClick={() => setShowEmojiPicker((prev) => !prev)}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              cursor: 'pointer',
-              color: 'var(--text-muted)',
-              padding: '3px 4px 3px 0',
-              display: 'flex',
-              alignItems: 'center'
-            }}
             title="Add emoji"
             aria-label="Add emoji"
           >
-            <Smile size={18} />
+            <Smile size={21} strokeWidth={1.85} />
           </button>
 
           <textarea
