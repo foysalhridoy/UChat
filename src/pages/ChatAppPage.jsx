@@ -8,7 +8,8 @@ import {
   MessageSquarePlus,
   MessageSquare,
   LogOut,
-  Info
+  Info,
+  PhoneOff
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -35,7 +36,7 @@ import {
   subscribeToIncomingCalls,
   stopRingtone
 } from '../services/callService';
-import { getOrCreateConversation } from '../services/conversationService';
+import { getOrCreateConversation, getConversationId } from '../services/conversationService';
 import {
   sendMessage,
   deleteMessageForMe,
@@ -133,9 +134,10 @@ export function ChatAppPage() {
   const [callLocalStream, setCallLocalStream] = useState(null);
   const [callRemoteStream, setCallRemoteStream] = useState(null);
   const [callStatus, setCallStatus] = useState('calling'); // 'calling' | 'connecting' | 'connected'
+  const [callError, setCallError] = useState(null);
   const callSessionRef = React.useRef(null);
 
-  // Subscribe to incoming calls for current user
+  // Subscribe to incoming calls for current user via conversations
   useEffect(() => {
     if (!currentUser?.uid) return;
     const unsub = subscribeToIncomingCalls(currentUser.uid, (call) => {
@@ -162,23 +164,25 @@ export function ChatAppPage() {
   const handleStartCall = async (target, type = 'audio') => {
     const otherUid = target?.uid || target?.id || targetUid;
     if (!currentUser || !otherUid) {
-      showToast('Could not identify user for call', 'error');
+      setCallError('Could not identify recipient for the call.');
       return;
     }
     if (currentUser.uid === otherUid) {
-      showToast('You cannot call yourself', 'warning');
+      setCallError('You cannot call yourself.');
       return;
     }
     if (activeCall) {
-      showToast('You are already in a call', 'warning');
+      setCallError('You are already in an active call.');
       return;
     }
 
     try {
       const otherName = target.displayName || target.username || targetUser?.displayName || targetUser?.username || 'User';
       const otherPhoto = target.photoURL || targetUser?.photoURL || '';
+      const convId = activeConversationId || getConversationId(currentUser.uid, otherUid);
 
       setActiveCall({
+        conversationId: convId,
         type,
         otherUserName: otherName,
         otherUserPhoto: otherPhoto,
@@ -187,6 +191,7 @@ export function ChatAppPage() {
       setCallStatus('calling');
 
       const session = await initiateCall({
+        conversationId: convId,
         caller: userProfile || currentUser,
         receiver: { uid: otherUid, displayName: otherName, photoURL: otherPhoto },
         type,
@@ -198,11 +203,10 @@ export function ChatAppPage() {
           setCallStatus('connected');
         },
         onCallRejected: () => {
-          showToast(`${otherName} declined the call`, 'info');
           cleanupCallUI();
+          setCallError(`${otherName} was unable or declined to take the call.`);
         },
         onCallEnded: () => {
-          showToast('Call ended', 'info');
           cleanupCallUI();
         }
       });
@@ -211,14 +215,14 @@ export function ChatAppPage() {
       setCallLocalStream(session.localStream);
     } catch (err) {
       console.error('Failed to initiate call:', err);
-      if (err.name === 'NotAllowedError') {
-        showToast('Microphone or camera permission was denied in your browser.', 'error');
-      } else if (err.name === 'NotFoundError') {
-        showToast('No microphone or camera device found on this device.', 'error');
-      } else {
-        showToast(err.message || 'Could not start call. Please check device permissions.', 'error');
-      }
       cleanupCallUI();
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setCallError('Microphone/Camera permission was denied. Please allow microphone and camera access in your browser settings to make calls.');
+      } else if (err.name === 'NotFoundError') {
+        setCallError('No microphone or camera device found on this device.');
+      } else {
+        setCallError(err.message || 'Could not start call. Please check device permissions and try again.');
+      }
     }
   };
 
@@ -228,8 +232,11 @@ export function ChatAppPage() {
     setIncomingCall(null);
 
     try {
+      const convId = callToAnswer.conversationId || activeConversationId || getConversationId(currentUser.uid, callToAnswer.callerId);
+
       setActiveCall({
-        callId: callToAnswer.id,
+        conversationId: convId,
+        callId: callToAnswer.id || callToAnswer.callId,
         type: callToAnswer.type,
         otherUserName: callToAnswer.callerName,
         otherUserPhoto: callToAnswer.callerPhoto,
@@ -238,13 +245,13 @@ export function ChatAppPage() {
       setCallStatus('connecting');
 
       const session = await answerCall({
-        call: { ...callToAnswer, callId: callToAnswer.id },
+        conversationId: convId,
+        call: { ...callToAnswer, conversationId: convId },
         onRemoteStream: (stream) => {
           setCallRemoteStream(stream);
           setCallStatus('connected');
         },
         onCallEnded: () => {
-          showToast('Call ended', 'info');
           cleanupCallUI();
         }
       });
@@ -253,16 +260,20 @@ export function ChatAppPage() {
       setCallLocalStream(session.localStream);
     } catch (err) {
       console.error('Failed to answer call:', err);
-      showToast('Could not access microphone/camera to answer call.', 'error');
       cleanupCallUI();
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setCallError('Microphone/Camera permission was denied. Please allow access in browser settings.');
+      } else {
+        setCallError('Could not access microphone/camera to answer the call.');
+      }
     }
   };
 
   const handleDeclineIncomingCall = async () => {
     if (!incomingCall) return;
-    const id = incomingCall.id;
+    const convId = incomingCall.conversationId || incomingCall.id;
     setIncomingCall(null);
-    await rejectIncomingCall(id);
+    await rejectIncomingCall(convId);
   };
 
   const handleEndActiveCall = async () => {
@@ -578,6 +589,32 @@ export function ChatAppPage() {
           </div>
         )}
       </Modal>
+
+      {/* Call Notice / Error Modal */}
+      {callError && (
+        <Modal
+          isOpen={Boolean(callError)}
+          onClose={() => setCallError(null)}
+          title="Call Notice"
+          maxWidth={380}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 16, padding: '8px 0' }}>
+            <div style={{ width: 50, height: 50, borderRadius: '50%', background: 'rgba(239, 68, 68, 0.12)', color: 'var(--danger)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <PhoneOff size={24} />
+            </div>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.92rem', lineHeight: 1.5 }}>
+              {callError}
+            </p>
+            <button
+              onClick={() => setCallError(null)}
+              className="btn btn-primary"
+              style={{ minWidth: 120, marginTop: 4 }}
+            >
+              OK
+            </button>
+          </div>
+        </Modal>
+      )}
 
       {/* WebRTC Incoming Call Alert Modal */}
       {incomingCall && (

@@ -4,18 +4,20 @@ import {
   setDoc,
   updateDoc,
   onSnapshot,
-  addDoc,
-  serverTimestamp,
+  arrayUnion,
   query,
   where
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from './firebase';
+import { getConversationId } from './conversationService';
 
 const rtcConfig = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' }
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' }
   ],
   iceCandidatePoolSize: 10
 };
@@ -86,38 +88,38 @@ export function stopRingtone() {
 }
 
 /**
- * Acquire local audio/video media stream with fallback
+ * Acquire local audio/video media stream with resilient fallback
  */
 export async function getLocalMediaStream(type = 'video') {
   const wantsVideo = type === 'video';
-  try {
-    return await navigator.mediaDevices.getUserMedia({
-      audio: true,
-      video: wantsVideo
-        ? {
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-            facingMode: 'user'
-          }
-        : false
-    });
-  } catch (err) {
-    // If video fails (e.g. no camera attached or permission denied for video), fallback to audio-only
-    if (wantsVideo) {
-      console.warn('Camera not accessible, falling back to audio-only:', err);
+
+  if (wantsVideo) {
+    try {
+      return await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: { facingMode: 'user' }
+      });
+    } catch (err) {
+      console.warn('Camera not accessible, falling back to audio-only stream:', err);
       return await navigator.mediaDevices.getUserMedia({
         audio: true,
         video: false
       });
     }
-    throw err;
   }
+
+  return await navigator.mediaDevices.getUserMedia({
+    audio: true,
+    video: false
+  });
 }
 
 /**
- * Start an outgoing WebRTC call
+ * Start an outgoing WebRTC call.
+ * Uses existing allowed conversations/{conversationId} collection for signaling.
  */
 export async function initiateCall({
+  conversationId,
   caller,
   receiver,
   type = 'video',
@@ -130,17 +132,21 @@ export async function initiateCall({
     throw new Error('Firebase is not configured.');
   }
 
+  const callerUid = caller.uid || caller.id;
   const receiverUid = receiver.uid || receiver.id;
-  if (!receiverUid) {
-    throw new Error('Recipient UID is missing.');
+  if (!receiverUid || !callerUid) {
+    throw new Error('Recipient or caller information is missing.');
   }
+
+  const convId = conversationId || getConversationId(callerUid, receiverUid);
+  const convRef = doc(db, 'conversations', convId);
+
+  // 1. Acquire local media stream first
+  const localStream = await getLocalMediaStream(type);
 
   playRingtone('outgoing');
 
-  // 1. Get local stream
-  const localStream = await getLocalMediaStream(type);
-
-  // 2. Initialize Peer Connection
+  // 2. Initialize WebRTC Peer Connection
   const peerConnection = new RTCPeerConnection(rtcConfig);
 
   localStream.getTracks().forEach((track) => {
@@ -154,28 +160,66 @@ export async function initiateCall({
     }
   };
 
-  // 3. Create Call Document in Firestore
-  const callDocRef = doc(collection(db, 'calls'));
-  const callId = callDocRef.id;
-
-  const offerCandidatesCol = collection(db, 'calls', callId, 'offerCandidates');
-  const answerCandidatesCol = collection(db, 'calls', callId, 'answerCandidates');
-
-  peerConnection.onicecandidate = (event) => {
-    if (event.candidate) {
-      addDoc(offerCandidatesCol, event.candidate.toJSON()).catch((e) => {
-        console.warn('Error adding offer ICE candidate:', e);
-      });
+  peerConnection.onconnectionstatechange = () => {
+    if (peerConnection.connectionState === 'connected') {
+      stopRingtone();
+      if (onCallActive) onCallActive();
     }
   };
 
-  // 4. Create and set Offer SDP
+  peerConnection.oniceconnectionstatechange = () => {
+    if (
+      peerConnection.iceConnectionState === 'connected' ||
+      peerConnection.iceConnectionState === 'completed'
+    ) {
+      stopRingtone();
+      if (onCallActive) onCallActive();
+    }
+  };
+
+  // Buffer ICE candidates before document creation, then batch flush
+  const earlyCandidates = [];
+  let isDocInitialized = false;
+  const pendingBatch = [];
+  let batchTimeout = null;
+
+  const flushCandidatesBatch = () => {
+    if (pendingBatch.length === 0) return;
+    const toSend = [...pendingBatch];
+    pendingBatch.length = 0;
+    updateDoc(convRef, {
+      'activeCall.offerCandidates': arrayUnion(...toSend)
+    }).catch((err) => {
+      console.warn('Error flushing offer candidates:', err);
+    });
+  };
+
+  peerConnection.onicecandidate = (event) => {
+    if (event.candidate) {
+      const candObj = event.candidate.toJSON();
+      if (!isDocInitialized) {
+        earlyCandidates.push(candObj);
+      } else {
+        pendingBatch.push(candObj);
+        if (!batchTimeout) {
+          batchTimeout = setTimeout(() => {
+            batchTimeout = null;
+            flushCandidatesBatch();
+          }, 250);
+        }
+      }
+    }
+  };
+
+  // 3. Create Offer SDP
   const offerDescription = await peerConnection.createOffer();
   await peerConnection.setLocalDescription(offerDescription);
 
+  const callId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const callData = {
     callId,
-    callerId: caller.uid || caller.id || '',
+    conversationId: convId,
+    callerId: callerUid,
     callerName: caller.displayName || caller.username || 'User',
     callerPhoto: caller.photoURL || '',
     receiverId: receiverUid,
@@ -183,94 +227,132 @@ export async function initiateCall({
     receiverPhoto: receiver.photoURL || '',
     type: type || 'audio',
     status: 'calling', // 'calling' | 'active' | 'rejected' | 'ended'
-    createdAt: serverTimestamp(),
+    createdAt: Date.now(),
     offer: {
       sdp: offerDescription.sdp || '',
       type: offerDescription.type || 'offer'
-    }
+    },
+    answer: null,
+    offerCandidates: earlyCandidates,
+    answerCandidates: []
   };
 
-  await setDoc(callDocRef, callData);
+  // 4. Save to Firestore conversation document (creates or merges cleanly)
+  await setDoc(
+    convRef,
+    {
+      id: convId,
+      participants: [callerUid, receiverUid],
+      participantMap: {
+        [callerUid]: true,
+        [receiverUid]: true
+      },
+      activeCall: callData
+    },
+    { merge: true }
+  );
+  isDocInitialized = true;
 
-  // Queue remote ICE candidates until remoteDescription is set
-  const candidateQueue = [];
-  let isRemoteDescriptionSet = false;
+  // Queue any candidates generated during setDoc
+  if (pendingBatch.length > 0) {
+    flushCandidatesBatch();
+  }
 
-  const processCandidate = (candidateData) => {
-    const candidate = new RTCIceCandidate(candidateData);
-    if (isRemoteDescriptionSet) {
-      peerConnection.addIceCandidate(candidate).catch((e) => {
-        console.warn('Error adding remote ICE candidate:', e);
-      });
-    } else {
-      candidateQueue.push(candidate);
-    }
-  };
+  // 5. Listen for Receiver response & ICE candidates
+  const seenAnswerCandidates = new Set();
+  const answerQueue = [];
+  let isRemoteDescSet = false;
 
-  const flushCandidates = () => {
-    isRemoteDescriptionSet = true;
-    while (candidateQueue.length > 0) {
-      const cand = candidateQueue.shift();
-      peerConnection.addIceCandidate(cand).catch((e) => {
-        console.warn('Error flushing ICE candidate:', e);
-      });
-    }
-  };
-
-  // 5. Listen for Receiver Answer or Status Change
-  const unsubCall = onSnapshot(callDocRef, async (snapshot) => {
+  const unsub = onSnapshot(convRef, async (snapshot) => {
     const data = snapshot.data();
-    if (!data) return;
+    if (!data || !data.activeCall) return;
+    const call = data.activeCall;
 
-    if (data.status === 'rejected') {
-      stopRingtone();
+    // Check for call decline or termination
+    if (call.status === 'rejected') {
       cleanup();
       if (onCallRejected) onCallRejected();
-    } else if (data.status === 'ended') {
-      stopRingtone();
+      return;
+    }
+    if (call.status === 'ended') {
       cleanup();
       if (onCallEnded) onCallEnded();
-    } else if (data.status === 'active' || data.answer) {
-      stopRingtone();
-      if (onCallActive) onCallActive();
-      if (data.answer && !peerConnection.currentRemoteDescription) {
-        try {
-          const answerDescription = new RTCSessionDescription(data.answer);
-          await peerConnection.setRemoteDescription(answerDescription);
-          flushCandidates();
-        } catch (e) {
-          console.warn('Set remote description failed:', e);
+      return;
+    }
+
+    // Set Remote Description from Answer
+    if (call.answer && !isRemoteDescSet) {
+      isRemoteDescSet = true;
+      try {
+        const answerDesc = new RTCSessionDescription(call.answer);
+        await peerConnection.setRemoteDescription(answerDesc);
+        stopRingtone();
+        if (onCallActive) onCallActive();
+
+        // Flush any queued answer candidates
+        while (answerQueue.length > 0) {
+          const cand = answerQueue.shift();
+          try {
+            await peerConnection.addIceCandidate(new RTCIceCandidate(cand));
+          } catch (e) {}
+        }
+      } catch (err) {
+        console.warn('Set remote description error on caller:', err);
+      }
+    }
+
+    // Handle Receiver ICE candidates
+    if (Array.isArray(call.answerCandidates)) {
+      for (const cand of call.answerCandidates) {
+        const key = `${cand.candidate}_${cand.sdpMid}_${cand.sdpMLineIndex}`;
+        if (!seenAnswerCandidates.has(key)) {
+          seenAnswerCandidates.add(key);
+          if (isRemoteDescSet && peerConnection.remoteDescription) {
+            try {
+              await peerConnection.addIceCandidate(new RTCIceCandidate(cand));
+            } catch (e) {
+              console.warn('Error adding answer ICE candidate:', e);
+            }
+          } else {
+            answerQueue.push(cand);
+          }
         }
       }
     }
   });
 
-  // 6. Listen for Remote ICE Candidates from Receiver
-  const unsubAnswerCandidates = onSnapshot(answerCandidatesCol, (snapshot) => {
-    snapshot.docChanges().forEach((change) => {
-      if (change.type === 'added') {
-        processCandidate(change.doc.data());
-      }
-    });
-  });
+  // Call timeout if unanswered after 45 seconds
+  const timeoutId = setTimeout(async () => {
+    if (!isRemoteDescSet) {
+      try {
+        await updateDoc(convRef, { 'activeCall.status': 'ended' });
+      } catch (e) {}
+      cleanup();
+      if (onCallEnded) onCallEnded();
+    }
+  }, 45000);
 
   const cleanup = () => {
+    clearTimeout(timeoutId);
+    if (batchTimeout) clearTimeout(batchTimeout);
     stopRingtone();
-    unsubCall();
-    unsubAnswerCandidates();
+    unsub();
     localStream.getTracks().forEach((track) => track.stop());
-    peerConnection.close();
+    try {
+      peerConnection.close();
+    } catch (e) {}
   };
 
   const endCall = async () => {
     try {
-      await updateDoc(callDocRef, { status: 'ended' });
+      await updateDoc(convRef, { 'activeCall.status': 'ended' });
     } catch (e) {}
     cleanup();
   };
 
   return {
     callId,
+    conversationId: convId,
     localStream,
     peerConnection,
     endCall
@@ -278,9 +360,10 @@ export async function initiateCall({
 }
 
 /**
- * Answer an incoming call
+ * Answer an incoming WebRTC call.
  */
 export async function answerCall({
+  conversationId,
   call,
   onRemoteStream,
   onCallEnded
@@ -291,9 +374,8 @@ export async function answerCall({
 
   stopRingtone();
 
-  const callDocRef = doc(db, 'calls', call.callId || call.id);
-  const offerCandidatesCol = collection(db, 'calls', call.callId || call.id, 'offerCandidates');
-  const answerCandidatesCol = collection(db, 'calls', call.callId || call.id, 'answerCandidates');
+  const convId = conversationId || call.conversationId || getConversationId(call.callerId, call.receiverId);
+  const convRef = doc(db, 'conversations', convId);
 
   // 1. Acquire local stream
   const localStream = await getLocalMediaStream(call.type);
@@ -311,66 +393,121 @@ export async function answerCall({
     }
   };
 
+  // Buffer and flush answer ICE candidates
+  const earlyAnswerCandidates = [];
+  let isAnswerSaved = false;
+  const pendingAnswerBatch = [];
+  let answerBatchTimeout = null;
+
+  const flushAnswerBatch = () => {
+    if (pendingAnswerBatch.length === 0) return;
+    const toSend = [...pendingAnswerBatch];
+    pendingAnswerBatch.length = 0;
+    updateDoc(convRef, {
+      'activeCall.answerCandidates': arrayUnion(...toSend)
+    }).catch((err) => {
+      console.warn('Error flushing answer candidates:', err);
+    });
+  };
+
   peerConnection.onicecandidate = (event) => {
     if (event.candidate) {
-      addDoc(answerCandidatesCol, event.candidate.toJSON()).catch((e) => {
-        console.warn('Error adding answer ICE candidate:', e);
-      });
+      const candObj = event.candidate.toJSON();
+      if (!isAnswerSaved) {
+        earlyAnswerCandidates.push(candObj);
+      } else {
+        pendingAnswerBatch.push(candObj);
+        if (!answerBatchTimeout) {
+          answerBatchTimeout = setTimeout(() => {
+            answerBatchTimeout = null;
+            flushAnswerBatch();
+          }, 250);
+        }
+      }
     }
   };
 
-  // 3. Set remote offer & create Answer
+  // 3. Set remote Offer SDP
   await peerConnection.setRemoteDescription(new RTCSessionDescription(call.offer));
+
+  // Add any initial offer candidates sent by the caller
+  const seenOfferCandidates = new Set();
+  if (Array.isArray(call.offerCandidates)) {
+    for (const cand of call.offerCandidates) {
+      const key = `${cand.candidate}_${cand.sdpMid}_${cand.sdpMLineIndex}`;
+      if (!seenOfferCandidates.has(key)) {
+        seenOfferCandidates.add(key);
+        try {
+          await peerConnection.addIceCandidate(new RTCIceCandidate(cand));
+        } catch (e) {}
+      }
+    }
+  }
+
+  // 4. Create Answer SDP & set local description
   const answerDescription = await peerConnection.createAnswer();
   await peerConnection.setLocalDescription(answerDescription);
 
-  // 4. Update call doc with Answer and set status to active
-  await updateDoc(callDocRef, {
-    status: 'active',
-    answer: {
+  // 5. Update conversation with answer and initial candidates
+  await updateDoc(convRef, {
+    'activeCall.status': 'active',
+    'activeCall.answer': {
       type: answerDescription.type,
       sdp: answerDescription.sdp
-    }
+    },
+    'activeCall.answerCandidates': arrayUnion(...earlyAnswerCandidates)
   });
+  isAnswerSaved = true;
 
-  // 5. Listen for caller's ICE candidates
-  const unsubOfferCandidates = onSnapshot(offerCandidatesCol, (snapshot) => {
-    snapshot.docChanges().forEach((change) => {
-      if (change.type === 'added') {
-        const candidate = new RTCIceCandidate(change.doc.data());
-        peerConnection.addIceCandidate(candidate).catch((e) => {
-          console.warn('Error adding offer ICE candidate:', e);
-        });
-      }
-    });
-  });
+  if (pendingAnswerBatch.length > 0) {
+    flushAnswerBatch();
+  }
 
-  // 6. Listen for call termination
-  const unsubCall = onSnapshot(callDocRef, (snapshot) => {
+  // 6. Listen for ongoing offer candidates from caller & call end
+  const unsub = onSnapshot(convRef, (snapshot) => {
     const data = snapshot.data();
-    if (!data || data.status === 'ended' || data.status === 'rejected') {
+    if (!data || !data.activeCall) return;
+    const currentCall = data.activeCall;
+
+    if (currentCall.status === 'ended' || currentCall.status === 'rejected') {
       cleanup();
       if (onCallEnded) onCallEnded();
+      return;
+    }
+
+    if (Array.isArray(currentCall.offerCandidates)) {
+      for (const cand of currentCall.offerCandidates) {
+        const key = `${cand.candidate}_${cand.sdpMid}_${cand.sdpMLineIndex}`;
+        if (!seenOfferCandidates.has(key)) {
+          seenOfferCandidates.add(key);
+          try {
+            peerConnection.addIceCandidate(new RTCIceCandidate(cand));
+          } catch (e) {}
+        }
+      }
     }
   });
 
   const cleanup = () => {
+    if (answerBatchTimeout) clearTimeout(answerBatchTimeout);
     stopRingtone();
-    unsubCall();
-    unsubOfferCandidates();
+    unsub();
     localStream.getTracks().forEach((track) => track.stop());
-    peerConnection.close();
+    try {
+      peerConnection.close();
+    } catch (e) {}
   };
 
   const endCall = async () => {
     try {
-      await updateDoc(callDocRef, { status: 'ended' });
+      await updateDoc(convRef, { 'activeCall.status': 'ended' });
     } catch (e) {}
     cleanup();
   };
 
   return {
-    callId: call.callId || call.id,
+    callId: call.callId || convId,
+    conversationId: convId,
     localStream,
     peerConnection,
     endCall
@@ -380,49 +517,67 @@ export async function answerCall({
 /**
  * Reject incoming call
  */
-export async function rejectIncomingCall(callId) {
+export async function rejectIncomingCall(conversationId) {
   stopRingtone();
-  if (!isFirebaseConfigured || !db || !callId) return;
+  if (!isFirebaseConfigured || !db || !conversationId) return;
   try {
-    const callDocRef = doc(db, 'calls', callId);
-    await updateDoc(callDocRef, { status: 'rejected' });
+    const convRef = doc(db, 'conversations', conversationId);
+    await updateDoc(convRef, { 'activeCall.status': 'rejected' });
   } catch (err) {
     console.warn('Error rejecting call:', err);
   }
 }
 
 /**
- * Subscribe to incoming calls for current user
+ * End an ongoing call
+ */
+export async function endCall(conversationId) {
+  stopRingtone();
+  if (!isFirebaseConfigured || !db || !conversationId) return;
+  try {
+    const convRef = doc(db, 'conversations', conversationId);
+    await updateDoc(convRef, { 'activeCall.status': 'ended' });
+  } catch (err) {
+    console.warn('Error ending call:', err);
+  }
+}
+
+/**
+ * Subscribe to incoming calls using the conversations collection.
+ * This runs within standard Firestore security rules.
  */
 export function subscribeToIncomingCalls(userId, onIncomingCall) {
   if (!isFirebaseConfigured || !db || !userId) return () => {};
 
-  const callsCol = collection(db, 'calls');
   const q = query(
-    callsCol,
-    where('receiverId', '==', userId),
-    where('status', '==', 'calling')
+    collection(db, 'conversations'),
+    where('participants', 'array-contains', userId)
   );
 
-  return onSnapshot(q, (snapshot) => {
-    const calls = [];
-    snapshot.forEach((docSnap) => {
-      const data = docSnap.data();
-      calls.push({ id: docSnap.id, callId: docSnap.id, ...data });
-    });
-
-    if (calls.length > 0) {
-      // Sort newest first
-      calls.sort((a, b) => {
-        const tA = a.createdAt?.toMillis ? a.createdAt.toMillis() : Date.now();
-        const tB = b.createdAt?.toMillis ? b.createdAt.toMillis() : Date.now();
-        return tB - tA;
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      let incoming = null;
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        const call = data?.activeCall;
+        if (
+          call &&
+          call.receiverId === userId &&
+          call.status === 'calling' &&
+          Date.now() - (call.createdAt || 0) < 90000
+        ) {
+          incoming = {
+            ...call,
+            conversationId: docSnap.id,
+            id: call.callId || docSnap.id
+          };
+        }
       });
-      onIncomingCall(calls[0]);
-    } else {
-      onIncomingCall(null);
+      onIncomingCall(incoming);
+    },
+    (err) => {
+      console.warn('Error subscribing to incoming calls:', err);
     }
-  }, (err) => {
-    console.error('Error listening to incoming calls:', err);
-  });
+  );
 }
