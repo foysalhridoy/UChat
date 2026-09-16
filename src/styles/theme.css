@@ -55,48 +55,48 @@
 }
 
 [data-theme="dark"] {
-  /* Dark Theme Palette — Premium Deep Midnight */
-  --bg-primary: #080b18;
-  --bg-secondary: #0e1225;
-  --bg-tertiary: #161b30;
-  --bg-elevated: #1c2240;
-  --bg-hover: #1e2440;
-  --bg-active: #252c4a;
+  /* AMOLED Pure Black Theme — True #000000 for OLED/AMOLED screens */
+  --bg-primary: #000000;
+  --bg-secondary: #0a0a0a;
+  --bg-tertiary: #111111;
+  --bg-elevated: #181818;
+  --bg-hover: #1a1a1a;
+  --bg-active: #222222;
 
-  --border-subtle: #1a2038;
-  --border-strong: #252c4a;
-  --border-focus: #818cf8;
+  --border-subtle: #1c1c1c;
+  --border-strong: #2a2a2a;
+  --border-focus: #7c7ef8;
 
-  --text-primary: #edf0ff;
-  --text-secondary: #9ba3c2;
-  --text-muted: #5a6280;
-  --text-inverse: #080b18;
+  --text-primary: #f0f0f0;
+  --text-secondary: #999999;
+  --text-muted: #555555;
+  --text-inverse: #000000;
 
-  --primary: #6c6ff7;
-  --primary-hover: #5b5ef4;
-  --primary-subtle: rgba(108, 111, 247, 0.16);
+  --primary: #7879f7;
+  --primary-hover: #6c6ff7;
+  --primary-subtle: rgba(120, 121, 247, 0.15);
   --primary-text: #a5b4fc;
 
   --bubble-outgoing: #5b5ef4;
   --bubble-outgoing-text: #ffffff;
-  --bubble-outgoing-meta: rgba(255, 255, 255, 0.6);
+  --bubble-outgoing-meta: rgba(255, 255, 255, 0.58);
   --bubble-outgoing-seen: rgba(255, 255, 255, 0.85);
 
-  --bubble-incoming: #161b30;
-  --bubble-incoming-text: #edf0ff;
-  --bubble-incoming-meta: #5a6280;
-  --bubble-incoming-border: #1a2038;
+  --bubble-incoming: #111111;
+  --bubble-incoming-text: #f0f0f0;
+  --bubble-incoming-meta: #555555;
+  --bubble-incoming-border: #1c1c1c;
 
   --online: #4ade80;
-  --offline: #5a6280;
+  --offline: #444444;
   --error: #f87171;
   --error-bg: rgba(239, 68, 68, 0.12);
   --warning: #fbbf24;
   --success: #4ade80;
 
-  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.35);
-  --shadow-md: 0 4px 8px -2px rgb(0 0 0 / 0.45), 0 2px 4px -2px rgb(0 0 0 / 0.3);
-  --shadow-lg: 0 10px 20px -4px rgb(0 0 0 / 0.55), 0 4px 8px -4px rgb(0 0 0 / 0.35);
-  --shadow-xl: 0 20px 32px -6px rgb(0 0 0 / 0.65), 0 8px 12px -6px rgb(0 0 0 / 0.4);
+  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.6);
+  --shadow-md: 0 4px 8px -2px rgb(0 0 0 / 0.7), 0 2px 4px -2px rgb(0 0 0 / 0.5);
+  --shadow-lg: 0 10px 20px -4px rgb(0 0 0 / 0.75), 0 4px 8px -4px rgb(0 0 0 / 0.6);
+  --shadow-xl: 0 20px 32px -6px rgb(0 0 0 / 0.8), 0 8px 12px -6px rgb(0 0 0 / 0.65);
 }
 
