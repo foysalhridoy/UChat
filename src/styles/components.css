@@ -180,7 +180,7 @@
   flex-shrink: 0;
   border-radius: var(--radius-full);
   user-select: none;
-  background: linear-gradient(135deg, var(--primary), #a78bfa);
+  background: linear-gradient(135deg, var(--primary), #8dc5b9);
 }
 
 .avatar-img {
