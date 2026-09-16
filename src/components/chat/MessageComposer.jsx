@@ -14,14 +14,18 @@ export function MessageComposer({
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const textareaRef = useRef(null);
 
-  // Auto resize textarea (guaranteeing single-line slim height when empty with full descender clearance)
+  // Auto resize textarea (guaranteeing single-line slim height and zero visible scrollbars)
   useEffect(() => {
     if (textareaRef.current) {
       if (!text) {
         textareaRef.current.style.height = '26px';
+        textareaRef.current.style.overflowY = 'hidden';
       } else {
         textareaRef.current.style.height = 'auto';
-        textareaRef.current.style.height = `${Math.min(Math.max(textareaRef.current.scrollHeight, 26), 100)}px`;
+        const scrollH = textareaRef.current.scrollHeight;
+        const newHeight = Math.min(Math.max(scrollH, 26), 100);
+        textareaRef.current.style.height = `${newHeight}px`;
+        textareaRef.current.style.overflowY = scrollH > 100 ? 'auto' : 'hidden';
       }
     }
   }, [text]);
@@ -37,7 +41,8 @@ export function MessageComposer({
       await onSendMessage(trimmed);
       setText('');
       if (textareaRef.current) {
-        textareaRef.current.style.height = 'auto';
+        textareaRef.current.style.height = '26px';
+        textareaRef.current.style.overflowY = 'hidden';
         const isTouch = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
         if (!isTouch) {
           textareaRef.current.focus();

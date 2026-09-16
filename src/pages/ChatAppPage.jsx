@@ -591,7 +591,7 @@ export function ChatAppPage() {
               <MessageComposer
                 onSendMessage={handleSendMessage}
                 onTyping={handleUserTyping}
-                placeholder={`Message ${(targetUser?.displayName || targetUser?.username || '').trim().split(' ')[0] || ''}...`}
+                placeholder="Type a message..."
               />
             </div>
           ) : (
