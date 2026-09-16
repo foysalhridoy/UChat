@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Check, CheckCheck, Smile, Trash2, Ban } from 'lucide-react';
-import { formatMessageTime } from '../../utils/formatting';
+import { formatMessageTime, renderTextWithLinks } from '../../utils/formatting';
 import { DeleteMessageModal } from './DeleteMessageModal';
+import { ImageLightboxModal } from './ImageLightboxModal';
 
 const REACTION_EMOJIS = ['❤️', '👍', '😂', '😮', '😢', '🙏'];
 
@@ -15,6 +16,7 @@ export function MessageBubble({
 }) {
   const [showReactionPicker, setShowReactionPicker] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const bubbleRef = useRef(null);
 
   // Close reaction picker on outside click
@@ -35,6 +37,7 @@ export function MessageBubble({
 
   const timeFormatted = formatMessageTime(message.createdAt);
   const isDeleted = Boolean(message.deletedForEveryone);
+  const hasImage = Boolean(message.imageUrl);
 
   // Reactions summary
   const reactionsMap = message.reactions || {};
@@ -95,7 +98,7 @@ export function MessageBubble({
           )}
 
           {/* Actual Message Bubble */}
-          <div className="message-bubble">
+          <div className={`message-bubble ${hasImage ? 'has-image' : ''}`}>
             {isDeleted ? (
               <div className="message-deleted-content">
                 <Ban size={15} className="deleted-icon" />
@@ -104,7 +107,32 @@ export function MessageBubble({
                 </span>
               </div>
             ) : (
-              <span className="message-text">{message.text}</span>
+              <>
+                {/* Image display if present */}
+                {hasImage && (
+                  <div
+                    className="message-image-container"
+                    onClick={() => setIsLightboxOpen(true)}
+                    role="button"
+                    tabIndex={0}
+                    title="Click to view full photo"
+                  >
+                    <img
+                      src={message.imageUrl}
+                      alt={message.text || 'Photo'}
+                      className="message-image"
+                      loading="lazy"
+                    />
+                  </div>
+                )}
+
+                {/* Text or Caption with Link Detection */}
+                {message.text && (
+                  <span className={`message-text ${hasImage ? 'image-caption' : ''}`}>
+                    {renderTextWithLinks(message.text)}
+                  </span>
+                )}
+              </>
             )}
 
             <span className="message-meta">
@@ -152,6 +180,16 @@ export function MessageBubble({
         onDeleteForMe={() => onDeleteForMe && onDeleteForMe(message.id)}
         onDeleteForEveryone={() => onDeleteForEveryone && onDeleteForEveryone(message.id)}
       />
+
+      {/* Full screen photo Lightbox viewer */}
+      {hasImage && (
+        <ImageLightboxModal
+          isOpen={isLightboxOpen}
+          imageUrl={message.imageUrl}
+          caption={message.text}
+          onClose={() => setIsLightboxOpen(false)}
+        />
+      )}
     </>
   );
 }

@@ -1,3 +1,5 @@
+import React from 'react';
+
 /**
  * Date and time formatting helpers
  */
@@ -83,5 +85,42 @@ export function formatDateDivider(timestamp) {
     month: 'short',
     day: 'numeric',
     year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+  });
+}
+
+/**
+ * Safely parses text and transforms URLs into clickable links.
+ */
+export function renderTextWithLinks(text) {
+  if (!text) return text;
+
+  // Match http/https URLs and bare www. URLs
+  const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/gi;
+  const parts = text.split(urlRegex);
+
+  if (parts.length <= 1) {
+    return text;
+  }
+
+  return parts.map((part, index) => {
+    if (part && part.match(urlRegex)) {
+      const href = part.startsWith('http://') || part.startsWith('https://')
+        ? part
+        : `https://${part}`;
+
+      return React.createElement(
+        'a',
+        {
+          key: index,
+          href,
+          target: '_blank',
+          rel: 'noopener noreferrer',
+          className: 'message-link',
+          onClick: (e) => e.stopPropagation()
+        },
+        part
+      );
+    }
+    return part;
   });
 }

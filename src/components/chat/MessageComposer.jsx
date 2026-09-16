@@ -1,48 +1,80 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { SendHorizonal, Smile } from 'lucide-react';
+import { SendHorizonal, Smile, Image as ImageIcon, X } from 'lucide-react';
 
 const COMMON_EMOJIS = ['😊', '👍', '❤️', '🔥', '😂', '🎉', '👋', '✨'];
 
 export function MessageComposer({
   onSendMessage,
+  onSendImage,
   onTyping,
   disabled = false,
   placeholder = 'Type a message...'
 }) {
   const [text, setText] = useState('');
+  const [selectedImage, setSelectedImage] = useState(null); // { file, previewUrl, name }
   const [sending, setSending] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const textareaRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   // Auto resize textarea
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 100)}px`;
     }
   }, [text]);
+
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file');
+      return;
+    }
+    const previewUrl = URL.createObjectURL(file);
+    setSelectedImage({
+      file,
+      previewUrl,
+      name: file.name
+    });
+    e.target.value = '';
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  };
+
+  const handleClearImage = () => {
+    if (selectedImage?.previewUrl) {
+      URL.revokeObjectURL(selectedImage.previewUrl);
+    }
+    setSelectedImage(null);
+  };
 
   const handleSend = async (e) => {
     if (e) e.preventDefault();
     const trimmed = text.trim();
-    if (!trimmed || sending || disabled) return;
+    if ((!trimmed && !selectedImage) || sending || disabled) return;
 
     try {
       setSending(true);
       setShowEmojiPicker(false);
-      await onSendMessage(trimmed);
+
+      if (selectedImage && onSendImage) {
+        await onSendImage(selectedImage.file, trimmed);
+        handleClearImage();
+      } else if (trimmed && onSendMessage) {
+        await onSendMessage(trimmed);
+      }
+
       setText('');
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto';
-        // Only keep focus on desktop with physical keyboard.
-        // On mobile touch devices, calling programmatic focus after async send causes the browser
-        // to center/scroll the input field to the middle of the screen!
         const isTouch = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
         if (!isTouch) {
           textareaRef.current.focus();
         }
       }
-      // Ensure window never retains an offset
       if (typeof window !== 'undefined' && window.scrollY !== 0) {
         window.scrollTo(0, 0);
       }
@@ -54,7 +86,6 @@ export function MessageComposer({
   };
 
   const handleKeyDown = (e) => {
-    // Desktop: Enter sends message, Shift+Enter adds newline
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -78,17 +109,50 @@ export function MessageComposer({
     }
   };
 
-  const canSend = text.trim().length > 0 && !sending && !disabled;
+  const canSend = (text.trim().length > 0 || selectedImage !== null) && !sending && !disabled;
 
   return (
     <div className="message-composer-wrapper">
+      {/* Hidden file input for photos */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileChange}
+        accept="image/*"
+        style={{ display: 'none' }}
+        aria-hidden="true"
+      />
+
+      {/* Selected Image Thumbnail Preview Tray */}
+      {selectedImage && (
+        <div className="composer-image-preview">
+          <div className="composer-image-thumb-wrapper">
+            <img
+              src={selectedImage.previewUrl}
+              alt="Preview"
+              className="composer-image-thumb"
+            />
+            <button
+              type="button"
+              className="composer-image-remove-btn"
+              onClick={handleClearImage}
+              title="Remove photo"
+              aria-label="Remove photo"
+            >
+              <X size={14} />
+            </button>
+          </div>
+          <span className="composer-image-name">{selectedImage.name}</span>
+        </div>
+      )}
+
       {/* Quick emoji popover */}
       {showEmojiPicker && (
         <div
           style={{
             display: 'flex',
             gap: 8,
-            padding: '8px 12px',
+            padding: '6px 10px',
             backgroundColor: 'var(--bg-secondary)',
             border: '1px solid var(--border-subtle)',
             borderRadius: 'var(--radius-lg)',
@@ -119,6 +183,7 @@ export function MessageComposer({
 
       <form className="message-composer-form" onSubmit={handleSend}>
         <div className="composer-pill">
+          {/* Emoji Picker Button */}
           <button
             type="button"
             onClick={() => setShowEmojiPicker((prev) => !prev)}
@@ -137,6 +202,25 @@ export function MessageComposer({
             <Smile size={18} />
           </button>
 
+          {/* Photo / Image Attachment Button */}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              color: selectedImage ? 'var(--primary)' : 'var(--text-muted)',
+              padding: '3px 6px 3px 2px',
+              display: 'flex',
+              alignItems: 'center'
+            }}
+            title="Send photo"
+            aria-label="Attach photo"
+          >
+            <ImageIcon size={18} />
+          </button>
+
           <textarea
             ref={textareaRef}
             value={text}
@@ -151,7 +235,7 @@ export function MessageComposer({
                 }
               }, 250);
             }}
-            placeholder={placeholder}
+            placeholder={selectedImage ? 'Add a caption...' : placeholder}
             className="composer-textarea"
             rows={1}
             disabled={disabled}
@@ -167,7 +251,6 @@ export function MessageComposer({
           aria-label="Send message"
           title="Send message (Enter)"
           onMouseDown={(e) => {
-            // Prevent button from stealing focus from textarea on desktop
             e.preventDefault();
           }}
         >

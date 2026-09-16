@@ -29,6 +29,7 @@ import { Modal } from '../components/common/Modal';
 import { getOrCreateConversation } from '../services/conversationService';
 import {
   sendMessage,
+  sendImageMessage,
   deleteMessageForMe,
   deleteMessageForEveryone,
   toggleMessageReaction
@@ -116,6 +117,19 @@ export function ChatAppPage() {
     } catch (err) {
       console.error('Error sending message:', err);
       showToast('Failed to send message. Please check connection.', 'error');
+      throw err;
+    }
+  };
+
+  // Send photo image handler
+  const handleSendImage = async (file, caption) => {
+    if (!activeConversationId || !currentUser?.uid || !targetUid) return;
+    try {
+      stopTyping();
+      await sendImageMessage(activeConversationId, currentUser.uid, targetUid, file, caption);
+    } catch (err) {
+      console.error('Error sending photo:', err);
+      showToast('Could not send photo. Please try again.', 'error');
       throw err;
     }
   };
@@ -313,6 +327,7 @@ export function ChatAppPage() {
 
               <MessageComposer
                 onSendMessage={handleSendMessage}
+                onSendImage={handleSendImage}
                 onTyping={handleUserTyping}
                 placeholder={`Message ${targetUser?.displayName || targetUser?.username || ''}...`}
               />
