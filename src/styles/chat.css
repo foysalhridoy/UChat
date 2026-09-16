@@ -392,11 +392,20 @@
   box-shadow: 0 0 0 3px var(--primary-subtle);
 }
 
-.composer-textarea {
+.composer-textarea,
+.composer-textarea:focus,
+.composer-textarea:focus-visible,
+.composer-textarea:active {
   flex: 1;
-  background: transparent;
-  border: none;
-  outline: none;
+  background: transparent !important;
+  border: none !important;
+  outline: none !important;
+  outline-offset: 0 !important;
+  box-shadow: none !important;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  -webkit-tap-highlight-color: transparent !important;
   font-family: inherit;
   font-size: 0.96rem;
   color: var(--text-primary);

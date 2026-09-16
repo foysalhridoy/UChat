@@ -5,11 +5,16 @@ import { EmptyState } from '../common/EmptyState';
 import { MessageSquare, Sparkles } from 'lucide-react';
 
 export function MessageList({ messages, currentUserId, targetUser }) {
-  const bottomRef = useRef(null);
+  const containerRef = useRef(null);
 
-  // Auto scroll to bottom
+  // Auto scroll within container ONLY (never triggers window/body scroll jumps)
   const scrollToBottom = (behavior = 'smooth') => {
-    bottomRef.current?.scrollIntoView({ behavior });
+    if (containerRef.current) {
+      containerRef.current.scrollTo({
+        top: containerRef.current.scrollHeight,
+        behavior
+      });
+    }
   };
 
   useEffect(() => {
@@ -20,13 +25,12 @@ export function MessageList({ messages, currentUserId, targetUser }) {
   if (messages.length === 0) {
     const targetName = targetUser?.displayName || targetUser?.username || 'this user';
     return (
-      <div className="message-list-container">
+      <div ref={containerRef} className="message-list-container">
         <EmptyState
           icon={Sparkles}
           title="Say Hello!"
           description={`Start your conversation with ${targetName}. Send a greeting to connect.`}
         />
-        <div ref={bottomRef} />
       </div>
     );
   }
@@ -35,7 +39,7 @@ export function MessageList({ messages, currentUserId, targetUser }) {
   let lastDateString = '';
 
   return (
-    <div className="message-list-container" role="log" aria-live="polite">
+    <div ref={containerRef} className="message-list-container" role="log" aria-live="polite">
       {messages.map((message) => {
         const msgDate = toDate(message.createdAt);
         const dateString = msgDate ? msgDate.toDateString() : '';
@@ -62,7 +66,6 @@ export function MessageList({ messages, currentUserId, targetUser }) {
           </React.Fragment>
         );
       })}
-      <div ref={bottomRef} style={{ height: 1 }} />
     </div>
   );
 }

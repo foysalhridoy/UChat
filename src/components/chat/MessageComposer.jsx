@@ -34,7 +34,17 @@ export function MessageComposer({
       setText('');
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto';
-        textareaRef.current.focus();
+        // Only keep focus on desktop with physical keyboard.
+        // On mobile touch devices, calling programmatic focus after async send causes the browser
+        // to center/scroll the input field to the middle of the screen!
+        const isTouch = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+        if (!isTouch) {
+          textareaRef.current.focus();
+        }
+      }
+      // Ensure window never retains an offset
+      if (typeof window !== 'undefined' && window.scrollY !== 0) {
+        window.scrollTo(0, 0);
       }
     } catch (err) {
       console.error('Failed to send message:', err);
@@ -136,6 +146,9 @@ export function MessageComposer({
               setTimeout(() => {
                 const el = document.querySelector('.message-list-container');
                 if (el) el.scrollTop = el.scrollHeight;
+                if (typeof window !== 'undefined' && window.scrollY !== 0) {
+                  window.scrollTo(0, 0);
+                }
               }, 250);
             }}
             placeholder={placeholder}
@@ -153,6 +166,10 @@ export function MessageComposer({
           className="composer-send-btn"
           aria-label="Send message"
           title="Send message (Enter)"
+          onMouseDown={(e) => {
+            // Prevent button from stealing focus from textarea on desktop
+            e.preventDefault();
+          }}
         >
           <SendHorizonal size={19} />
         </button>

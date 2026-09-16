@@ -52,6 +52,9 @@ function AppContent() {
     const updateViewportHeight = () => {
       const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
       document.documentElement.style.setProperty('--app-height', `${vh}px`);
+      if (typeof window !== 'undefined' && window.scrollY !== 0) {
+        window.scrollTo(0, 0);
+      }
     };
 
     updateViewportHeight();
