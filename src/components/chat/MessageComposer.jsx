@@ -49,7 +49,7 @@ export function MessageComposer({
           anchor.scrollIntoView({ behavior: 'smooth', block: 'end' });
         } else {
           const list = document.querySelector('.message-list-container');
-          if (list) list.scrollTo({ top: list.scrollHeight + 300, behavior: 'smooth' });
+          if (list) list.scrollTo({ top: list.scrollHeight, behavior: 'smooth' });
         }
       }, 50);
       setTimeout(() => {

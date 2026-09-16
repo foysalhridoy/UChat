@@ -34,6 +34,7 @@ import {
   toggleMessageReaction
 } from '../services/messageService';
 import { formatLastSeen } from '../utils/formatting';
+import { subscribeUserProfile, getUserProfile } from '../services/userService';
 
 export function ChatAppPage() {
   const { currentUser, userProfile, logout } = useAuth();
@@ -66,7 +67,32 @@ export function ChatAppPage() {
   // Active conversation details
   const activeConversationId = activeConversation?.id;
   const targetUid = activeConversation?.participants?.find((uid) => uid !== currentUser?.uid);
-  const targetUser = activeConversation?.participantData?.[targetUid];
+  const staticTargetUser = activeConversation?.participantData?.[targetUid];
+  const [liveTargetUser, setLiveTargetUser] = useState(staticTargetUser || null);
+
+  useEffect(() => {
+    if (!targetUid) {
+      setLiveTargetUser(null);
+      return;
+    }
+    let isMounted = true;
+    getUserProfile(targetUid).then((data) => {
+      if (isMounted && data) {
+        setLiveTargetUser((prev) => ({ ...prev, ...data }));
+      }
+    });
+    const unsub = subscribeUserProfile(targetUid, (data) => {
+      if (isMounted && data) {
+        setLiveTargetUser((prev) => ({ ...prev, ...data }));
+      }
+    });
+    return () => {
+      isMounted = false;
+      unsub();
+    };
+  }, [targetUid]);
+
+  const targetUser = liveTargetUser || staticTargetUser;
 
   // Real-time messages for active chat
   const { messages, loading: msgsLoading } = useMessages(activeConversationId, currentUser?.uid);

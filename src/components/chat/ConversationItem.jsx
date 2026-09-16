@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Avatar } from '../common/Avatar';
 import { formatConversationTime } from '../../utils/formatting';
-import { subscribeUserProfile } from '../../services/userService';
+import { subscribeUserProfile, getUserProfile } from '../../services/userService';
 
 export function ConversationItem({
   conversation,
@@ -21,12 +21,25 @@ export function ConversationItem({
 
   useEffect(() => {
     if (!otherUid) return;
-    const unsub = subscribeUserProfile(otherUid, (profile) => {
-      if (profile) {
+    let isMounted = true;
+
+    // Fetch immediately to ensure latest displayName/photo are shown right away
+    getUserProfile(otherUid).then((profile) => {
+      if (isMounted && profile) {
         setLiveUser((prev) => ({ ...prev, ...profile }));
       }
     });
-    return () => unsub();
+
+    const unsub = subscribeUserProfile(otherUid, (profile) => {
+      if (isMounted && profile) {
+        setLiveUser((prev) => ({ ...prev, ...profile }));
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      unsub();
+    };
   }, [otherUid]);
 
   const unreadCount = conversation.unreadCounts?.[currentUserId] || 0;
@@ -64,7 +77,7 @@ export function ConversationItem({
       <div className="conversation-content">
         <div className="conversation-top">
           <span className="conversation-name">
-            {otherData.displayName || otherData.username}
+            {liveUser?.displayName || liveUser?.username || otherData.displayName || otherData.username}
           </span>
           {lastTime && (
             <span className="conversation-time">

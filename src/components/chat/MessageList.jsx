@@ -26,7 +26,7 @@ export function MessageList({
       messagesEndRef.current.scrollIntoView({ behavior, block: 'end' });
     } else if (containerRef.current) {
       containerRef.current.scrollTo({
-        top: containerRef.current.scrollHeight + 300,
+        top: containerRef.current.scrollHeight,
         behavior
       });
     }
