@@ -204,7 +204,7 @@
   align-items: center;
   justify-content: center;
   padding: 32px;
-  background: radial-gradient(circle at center, rgba(87, 170, 160, 0.22) 0%, #151f2a 70%);
+  background: radial-gradient(circle at center, rgba(84, 131, 179, 0.25) 0%, #021024 70%);
 }
 
 .audio-call-avatar-wrapper {
@@ -216,7 +216,7 @@
   position: absolute;
   inset: -16px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(87, 170, 160, 0.55) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(125, 160, 202, 0.6) 0%, transparent 70%);
   animation: callPulse 2s infinite;
 }
 
