@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, Video, VideoOff, PhoneOff, Volume2 } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, PhoneOff, Volume2, ShieldCheck } from 'lucide-react';
 import { Avatar } from '../common/Avatar';
 
 export function ActiveCallModal({
@@ -176,6 +176,19 @@ export function ActiveCallModal({
           </div>
         )}
 
+        {/* Top Header Bar */}
+        <div className="call-header-top">
+          <div className="call-security-badge" style={{ margin: 0 }}>
+            <ShieldCheck size={13} color="#10b981" />
+            <span>End-to-end encrypted</span>
+          </div>
+
+          <div className="call-status-pill">
+            <span className="call-status-indicator-dot" />
+            <span>{isVideoCall ? 'Video Call' : 'Voice Call'}</span>
+          </div>
+        </div>
+
         {isVideoCall ? (
           /* Video Call Stage */
           <div className="call-video-stage">
@@ -197,12 +210,19 @@ export function ActiveCallModal({
             {!hasRemoteVideoTrack && (
               <div className="call-audio-stage" style={{ width: '100%', height: '100%' }}>
                 <div className="audio-call-avatar-wrapper">
+                  {callStatus === 'calling' && (
+                    <>
+                      <div className="ripple-wave" />
+                      <div className="ripple-wave" />
+                      <div className="ripple-wave" />
+                    </>
+                  )}
                   <div className="audio-pulse-glow" />
                   <Avatar src={otherPhoto} name={otherName} size="xl" />
                 </div>
                 <h3 className="audio-call-name">{otherName}</h3>
                 <span className="audio-call-status">
-                  {callStatus === 'connected' ? 'Connected (waiting for video...)' : 'Connecting video...'}
+                  {callStatus === 'connected' ? 'Connected (waiting for video...)' : 'Calling...'}
                 </span>
                 {callStatus === 'connected' && (
                   <span className="audio-call-timer">{formatTimer(duration)}</span>
@@ -224,23 +244,55 @@ export function ActiveCallModal({
             )}
           </div>
         ) : (
-          /* Audio Call Stage */
+          /* Audio Call Stage (WhatsApp & Messenger Style) */
           <div className="call-audio-stage">
             <div className="audio-call-avatar-wrapper">
+              {callStatus === 'calling' && (
+                <>
+                  <div className="ripple-wave" />
+                  <div className="ripple-wave" />
+                  <div className="ripple-wave" />
+                </>
+              )}
               <div className="audio-pulse-glow" />
               <Avatar src={otherPhoto} name={otherName} size="xl" />
             </div>
+
             <h3 className="audio-call-name">{otherName}</h3>
+            
             <span className="audio-call-status">
-              {callStatus === 'connected' ? 'Voice Call Connected' : 'Calling...'}
+              {callStatus === 'connected'
+                ? 'Voice Call Connected'
+                : 'Calling...'}
             </span>
-            {callStatus === 'connected' && (
-              <span className="audio-call-timer">{formatTimer(duration)}</span>
+
+            {callStatus === 'connected' ? (
+              <>
+                <span className="audio-call-timer">{formatTimer(duration)}</span>
+                {/* Dynamic live sound waves indicator */}
+                <div className="sound-waves-container">
+                  <div className="sound-wave-bar" />
+                  <div className="sound-wave-bar" />
+                  <div className="sound-wave-bar" />
+                  <div className="sound-wave-bar" />
+                  <div className="sound-wave-bar" />
+                  <div className="sound-wave-bar" />
+                </div>
+              </>
+            ) : (
+              <div className="sound-waves-container" style={{ opacity: 0.2 }}>
+                <div className="sound-wave-bar" />
+                <div className="sound-wave-bar" />
+                <div className="sound-wave-bar" />
+                <div className="sound-wave-bar" />
+                <div className="sound-wave-bar" />
+                <div className="sound-wave-bar" />
+              </div>
             )}
           </div>
         )}
 
-        {/* Floating Call Controls Bar */}
+        {/* Floating WhatsApp/Messenger Capsule Controls Bar */}
         <div className="call-controls-bar">
           {/* Mute Microphone */}
           <button
@@ -270,9 +322,10 @@ export function ActiveCallModal({
           <button
             type="button"
             onClick={onEndCall}
-            className="call-action-btn end"
+            className="call-action-circle-btn end"
             title="End call"
             aria-label="End call"
+            style={{ width: 56, height: 56 }}
           >
             <PhoneOff size={24} />
           </button>

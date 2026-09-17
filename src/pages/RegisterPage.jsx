@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MessageSquare, ArrowLeft, AlertCircle, Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import { MessageSquare, ArrowLeft, AlertCircle, Loader2, CheckCircle2, XCircle, User, UserCheck, Lock, Eye, EyeOff } from 'lucide-react';
 import { registerUser, checkUsernameAvailability, getFriendlyErrorMessage } from '../services/authService';
 import { useToast } from '../context/ToastContext';
 import { isFirebaseConfigured } from '../services/firebase';
@@ -9,6 +9,7 @@ export function RegisterPage({ onNavigate }) {
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   
@@ -17,6 +18,13 @@ export function RegisterPage({ onNavigate }) {
   const [statusMessage, setStatusMessage] = useState('');
 
   const { showToast } = useToast();
+
+  const handleInputFocus = (e) => {
+    // Smoothly scroll input into view when virtual keyboard pops up
+    setTimeout(() => {
+      e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 280);
+  };
 
   // Debounced check for username availability
   useEffect(() => {
@@ -111,108 +119,117 @@ export function RegisterPage({ onNavigate }) {
           className="auth-back-link"
         >
           <ArrowLeft size={16} />
-          <span>Back to home</span>
+          <span>Home</span>
         </a>
 
         <div className="auth-header">
           <div className="auth-logo">
-            <div
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: 'var(--radius-md)',
-                background: 'linear-gradient(135deg, var(--primary), #818cf8)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#ffffff',
-                boxShadow: 'var(--shadow-md)'
-              }}
-            >
-              <MessageSquare size={24} />
+            <div className="auth-brand-badge">
+              <MessageSquare size={28} />
             </div>
           </div>
-          <h1 className="auth-title">Create an account</h1>
-          <p className="auth-subtitle">Choose a unique username to get started</p>
+          <h1 className="auth-title">Create account</h1>
+          <p className="auth-subtitle">Pick a unique username to get started</p>
         </div>
 
         {error && (
           <div className="auth-alert auth-alert-error" role="alert">
-            <AlertCircle size={18} style={{ flexShrink: 0, marginTop: 1 }} />
+            <AlertCircle size={18} style={{ flexShrink: 0 }} />
             <span>{error}</span>
           </div>
         )}
 
         <form className="auth-form" onSubmit={handleSubmit}>
           <div className="input-group">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <label className="input-label" htmlFor="reg-username">Unique Username</label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <label className="input-label" htmlFor="reg-username" style={{ margin: 0 }}>Unique Username</label>
               {usernameStatus === 'checking' && (
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
                   <Loader2 size={12} className="spinner" /> Checking...
                 </span>
               )}
               {usernameStatus === 'available' && (
-                <span style={{ fontSize: '0.75rem', color: '#10b981', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 500 }}>
+                <span style={{ fontSize: '0.75rem', color: '#10b981', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 600 }}>
                   <CheckCircle2 size={13} /> Available
                 </span>
               )}
               {usernameStatus === 'taken' && (
-                <span style={{ fontSize: '0.75rem', color: '#ef4444', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 500 }}>
-                  <XCircle size={13} /> Already taken
+                <span style={{ fontSize: '0.75rem', color: '#ef4444', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 600 }}>
+                  <XCircle size={13} /> Taken
                 </span>
               )}
             </div>
-            <input
-              id="reg-username"
-              type="text"
-              className="input-field"
-              placeholder="e.g. rahim23"
-              value={username}
-              onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
-              required
-              autoComplete="username"
-              maxLength={20}
-              style={{
-                borderColor:
-                  usernameStatus === 'available'
-                    ? '#10b981'
-                    : usernameStatus === 'taken'
-                    ? '#ef4444'
-                    : undefined
-              }}
-            />
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              Letters, numbers, underscores (3-20 chars). Must be unique.
+            <div className="auth-input-container">
+              <User size={18} className="auth-input-icon" />
+              <input
+                id="reg-username"
+                type="text"
+                className="auth-input-field"
+                placeholder="e.g. rahim23"
+                value={username}
+                onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+                onFocus={handleInputFocus}
+                required
+                autoComplete="username"
+                maxLength={20}
+                style={{
+                  borderColor:
+                    usernameStatus === 'available'
+                      ? '#10b981'
+                      : usernameStatus === 'taken'
+                      ? '#ef4444'
+                      : undefined
+                }}
+              />
+            </div>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 4 }}>
+              Letters, numbers, underscores (3-20 chars).
             </span>
           </div>
 
           <div className="input-group">
             <label className="input-label" htmlFor="reg-name">Full Name (Optional)</label>
-            <input
-              id="reg-name"
-              type="text"
-              className="input-field"
-              placeholder="e.g. Rahim Chowdhury"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              autoComplete="name"
-              maxLength={40}
-            />
+            <div className="auth-input-container">
+              <UserCheck size={18} className="auth-input-icon" />
+              <input
+                id="reg-name"
+                type="text"
+                className="auth-input-field"
+                placeholder="e.g. Rahim Chowdhury"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                onFocus={handleInputFocus}
+                autoComplete="name"
+                maxLength={40}
+              />
+            </div>
           </div>
 
           <div className="input-group">
             <label className="input-label" htmlFor="reg-password">Password</label>
-            <input
-              id="reg-password"
-              type="password"
-              className="input-field"
-              placeholder="At least 6 characters"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              autoComplete="new-password"
-            />
+            <div className="auth-input-container">
+              <Lock size={18} className="auth-input-icon" />
+              <input
+                id="reg-password"
+                type={showPassword ? 'text' : 'password'}
+                className="auth-input-field"
+                placeholder="At least 6 characters"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                onFocus={handleInputFocus}
+                required
+                autoComplete="new-password"
+              />
+              <button
+                type="button"
+                className="auth-password-toggle"
+                onClick={() => setShowPassword(!showPassword)}
+                tabIndex={-1}
+                title={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
           </div>
 
           <button

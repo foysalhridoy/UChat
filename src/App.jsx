@@ -85,7 +85,17 @@ function AppContent() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'var(--app-height, 100dvh)', width: '100%', overflow: 'hidden' }}>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: 'var(--app-height, 100dvh)',
+        width: '100%',
+        overflowX: 'hidden',
+        overflowY: currentPage === 'chat' ? 'hidden' : 'auto',
+        WebkitOverflowScrolling: 'touch'
+      }}
+    >
       <FirebaseSetupBanner />
       {currentPage === 'chat' && currentUser ? (
         <ChatAppPage />
