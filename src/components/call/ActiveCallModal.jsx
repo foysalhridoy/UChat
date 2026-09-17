@@ -43,7 +43,7 @@ export function ActiveCallModal({
     };
   }, [remoteStream]);
 
-  // Callback ref for remote video to guarantee srcObject is attached the instant it mounts in DOM
+  // Callback ref for remote video
   const setRemoteVideoRef = (element) => {
     remoteVideoRef.current = element;
     if (element && remoteStream) {
@@ -51,17 +51,19 @@ export function ActiveCallModal({
         element.srcObject = remoteStream;
       }
       element.play().catch((err) => {
-        console.warn('Remote video play error:', err);
+        console.warn('Remote video unmuted play blocked, falling back to muted:', err);
+        element.muted = true;
+        element.play().catch(() => {});
+        setAudioBlocked(true);
       });
     }
   };
 
-  // Callback ref for remote audio
+  // Callback ref for remote audio (for voice calls)
   const setRemoteAudioRef = (element) => {
     remoteAudioRef.current = element;
     if (element && remoteStream) {
       element.volume = 1.0;
-      element.muted = false;
       if (element.srcObject !== remoteStream) {
         element.srcObject = remoteStream;
       }
@@ -90,11 +92,16 @@ export function ActiveCallModal({
         if (remoteVideoRef.current.srcObject !== remoteStream) {
           remoteVideoRef.current.srcObject = remoteStream;
         }
-        remoteVideoRef.current.play().catch(() => {});
+        remoteVideoRef.current.play().catch(() => {
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.muted = true;
+            remoteVideoRef.current.play().catch(() => {});
+          }
+          setAudioBlocked(true);
+        });
       }
       if (remoteAudioRef.current) {
         remoteAudioRef.current.volume = 1.0;
-        remoteAudioRef.current.muted = false;
         if (remoteAudioRef.current.srcObject !== remoteStream) {
           remoteAudioRef.current.srcObject = remoteStream;
         }
@@ -229,12 +236,11 @@ export function ActiveCallModal({
         {isVideoCall ? (
           /* Video Call Stage */
           <div className="call-video-stage">
-            {/* Remote video element - muted so browser autoplay policy never suppresses video stream */}
+            {/* Remote video element - plays both video and audio tracks */}
             <video
               ref={setRemoteVideoRef}
               autoPlay
               playsInline
-              muted
               className="remote-video"
               style={{
                 display: hasRemoteVideoTrack ? 'block' : 'none',

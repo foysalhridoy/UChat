@@ -17,19 +17,8 @@ const rtcConfig = {
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
-    { urls: 'stun:stun.cloudflare.com:3478' },
-    {
-      urls: [
-        'turn:openrelay.metered.ca:80',
-        'turn:openrelay.metered.ca:443',
-        'turn:openrelay.metered.ca:443?transport=tcp'
-      ],
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    }
-  ],
-  iceCandidatePoolSize: 10
+    { urls: 'stun:stun4.l.google.com:19302' }
+  ]
 };
 
 // Web Audio API Ringtone Synthesizer
@@ -142,41 +131,21 @@ function sanitizeCandidate(candidate) {
 }
 
 /**
- * Safely add an ICE candidate to an RTCPeerConnection without unhandled rejections
+ * Safely add an ICE candidate to an RTCPeerConnection
  */
-function addCandidateToPeer(peerConnection, cand) {
-  if (!cand || !cand.candidate) return Promise.resolve();
+async function addCandidateToPeer(peerConnection, cand) {
+  if (!cand || !cand.candidate) return;
   try {
     const candidateInit = {
       candidate: cand.candidate,
       sdpMid: cand.sdpMid !== null && cand.sdpMid !== undefined ? String(cand.sdpMid) : undefined,
       sdpMLineIndex: typeof cand.sdpMLineIndex === 'number' ? cand.sdpMLineIndex : undefined
     };
-    return peerConnection.addIceCandidate(new RTCIceCandidate(candidateInit)).catch((err) => {
-      console.warn('Candidate add ignored:', err.message);
-    });
-  } catch (e) {
-    return Promise.resolve();
+    await peerConnection.addIceCandidate(new RTCIceCandidate(candidateInit));
+    console.log('[WebRTC] Added ICE candidate successfully:', candidateInit.sdpMid, candidateInit.sdpMLineIndex);
+  } catch (err) {
+    console.warn('[WebRTC] Candidate add warning:', err.message);
   }
-}
-
-/**
- * Wait for ICE gathering to complete or timeout.
- * Embedding gathered candidates directly in localDescription.sdp drastically speeds up P2P connection.
- */
-async function waitForIceGathering(peerConnection, maxWaitMs = 1200) {
-  if (peerConnection.iceGatheringState === 'complete') return;
-  await new Promise((resolve) => {
-    const timer = setTimeout(resolve, maxWaitMs);
-    const handler = () => {
-      if (peerConnection.iceGatheringState === 'complete') {
-        clearTimeout(timer);
-        peerConnection.removeEventListener('icegatheringstatechange', handler);
-        resolve();
-      }
-    };
-    peerConnection.addEventListener('icegatheringstatechange', handler);
-  });
 }
 
 /**
@@ -200,31 +169,18 @@ export async function getLocalMediaStream(type = 'video') {
   if (wantsVideo) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        },
-        video: {
-          facingMode: 'user',
-          width: { ideal: 640 },
-          height: { ideal: 480 },
-          frameRate: { ideal: 24 }
-        }
+        audio: true,
+        video: { facingMode: 'user' }
       });
       stream.getTracks().forEach((t) => {
         t.enabled = true;
       });
       return stream;
     } catch (videoErr) {
-      console.warn('Camera with facingMode failed, trying generic video:', videoErr);
+      console.warn('Camera with facingMode failed, trying basic video:', videoErr);
       try {
         const fallbackStream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
-          },
+          audio: true,
           video: true
         });
         fallbackStream.getTracks().forEach((t) => {
@@ -243,28 +199,14 @@ export async function getLocalMediaStream(type = 'video') {
 
 async function getLocalAudioStream() {
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true
-      }
-    });
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     stream.getTracks().forEach((t) => {
       t.enabled = true;
     });
     return stream;
   } catch (err) {
-    console.warn('Standard audio failed, trying basic audio constraints:', err);
-    try {
-      const fallbackStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      fallbackStream.getTracks().forEach((t) => {
-        t.enabled = true;
-      });
-      return fallbackStream;
-    } catch (err2) {
-      throw err;
-    }
+    console.warn('Standard audio capture failed:', err);
+    throw err;
   }
 }
 
@@ -318,6 +260,7 @@ export async function initiateCall({
   const remoteStream = new MediaStream();
 
   peerConnection.ontrack = (event) => {
+    console.log('[WebRTC] Caller ontrack:', event.track.kind);
     stopRingtone();
     if (event.streams && event.streams[0]) {
       event.streams[0].getTracks().forEach((track) => {
@@ -332,13 +275,13 @@ export async function initiateCall({
         remoteStream.addTrack(event.track);
       }
     }
-    // Emit a fresh MediaStream copy so React state change triggers re-render and attaches tracks
     if (onRemoteStream) {
-      onRemoteStream(new MediaStream(remoteStream.getTracks()));
+      onRemoteStream(remoteStream);
     }
   };
 
   peerConnection.onconnectionstatechange = () => {
+    console.log('[WebRTC] Caller connectionState:', peerConnection.connectionState);
     if (peerConnection.connectionState === 'connected') {
       stopRingtone();
       if (onCallActive) onCallActive();
@@ -346,6 +289,7 @@ export async function initiateCall({
   };
 
   peerConnection.oniceconnectionstatechange = () => {
+    console.log('[WebRTC] Caller iceConnectionState:', peerConnection.iceConnectionState);
     if (
       peerConnection.iceConnectionState === 'connected' ||
       peerConnection.iceConnectionState === 'completed'
@@ -387,16 +331,15 @@ export async function initiateCall({
           batchTimeout = setTimeout(() => {
             batchTimeout = null;
             flushCandidatesBatch();
-          }, 300);
+          }, 200);
         }
       }
     }
   };
 
-  // 3. Create Offer SDP & wait for ICE gathering
+  // 3. Create Offer SDP & set local description
   const offerDescription = await peerConnection.createOffer();
   await peerConnection.setLocalDescription(offerDescription);
-  await waitForIceGathering(peerConnection, 1200);
 
   const localOffer = peerConnection.localDescription || offerDescription;
   const callId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -447,6 +390,19 @@ export async function initiateCall({
   const answerQueue = [];
   let isRemoteDescSet = false;
 
+  const addAnswerCandidate = async (cand) => {
+    if (!cand || !cand.candidate) return;
+    const key = `${cand.candidate}_${cand.sdpMid}_${cand.sdpMLineIndex}`;
+    if (seenAnswerCandidates.has(key)) return;
+    seenAnswerCandidates.add(key);
+
+    if (isRemoteDescSet && peerConnection.remoteDescription) {
+      await addCandidateToPeer(peerConnection, cand);
+    } else {
+      answerQueue.push(cand);
+    }
+  };
+
   const unsub = onSnapshot(convRef, async (snapshot) => {
     const data = snapshot.data();
     if (!data || !data.activeCall) return;
@@ -470,13 +426,14 @@ export async function initiateCall({
       try {
         const answerDesc = new RTCSessionDescription(call.answer);
         await peerConnection.setRemoteDescription(answerDesc);
+        console.log('[WebRTC] Caller set remote description (answer) successfully');
         stopRingtone();
         if (onCallActive) onCallActive();
 
         // Flush any queued answer candidates
         while (answerQueue.length > 0) {
           const cand = answerQueue.shift();
-          addCandidateToPeer(peerConnection, cand);
+          await addCandidateToPeer(peerConnection, cand);
         }
       } catch (err) {
         console.warn('Set remote description error on caller:', err);
@@ -486,15 +443,7 @@ export async function initiateCall({
     // Handle Receiver ICE candidates
     if (Array.isArray(call.answerCandidates)) {
       for (const cand of call.answerCandidates) {
-        const key = `${cand.candidate}_${cand.sdpMid}_${cand.sdpMLineIndex}`;
-        if (!seenAnswerCandidates.has(key)) {
-          seenAnswerCandidates.add(key);
-          if (isRemoteDescSet && peerConnection.remoteDescription) {
-            addCandidateToPeer(peerConnection, cand);
-          } else {
-            answerQueue.push(cand);
-          }
-        }
+        addAnswerCandidate(cand);
       }
     }
   });
@@ -576,6 +525,7 @@ export async function answerCall({
   const remoteStream = new MediaStream();
 
   peerConnection.ontrack = (event) => {
+    console.log('[WebRTC] Receiver ontrack:', event.track.kind);
     if (event.streams && event.streams[0]) {
       event.streams[0].getTracks().forEach((track) => {
         track.enabled = true;
@@ -589,13 +539,13 @@ export async function answerCall({
         remoteStream.addTrack(event.track);
       }
     }
-    // Emit a fresh MediaStream copy so React state change triggers re-render and attaches tracks
     if (onRemoteStream) {
-      onRemoteStream(new MediaStream(remoteStream.getTracks()));
+      onRemoteStream(remoteStream);
     }
   };
 
   peerConnection.onconnectionstatechange = () => {
+    console.log('[WebRTC] Receiver connectionState:', peerConnection.connectionState);
     if (peerConnection.connectionState === 'connected') {
       stopRingtone();
       if (onCallActive) onCallActive();
@@ -603,6 +553,7 @@ export async function answerCall({
   };
 
   peerConnection.oniceconnectionstatechange = () => {
+    console.log('[WebRTC] Receiver iceConnectionState:', peerConnection.iceConnectionState);
     if (
       peerConnection.iceConnectionState === 'connected' ||
       peerConnection.iceConnectionState === 'completed'
@@ -644,7 +595,7 @@ export async function answerCall({
           answerBatchTimeout = setTimeout(() => {
             answerBatchTimeout = null;
             flushAnswerBatch();
-          }, 300);
+          }, 200);
         }
       }
     }
@@ -652,27 +603,32 @@ export async function answerCall({
 
   // 3. Set remote Offer SDP
   await peerConnection.setRemoteDescription(new RTCSessionDescription(call.offer));
+  console.log('[WebRTC] Receiver set remote description (offer) successfully');
 
-  // Add any initial offer candidates sent by the caller
+  // 4. Create Answer SDP & set local description
+  const answerDescription = await peerConnection.createAnswer();
+  await peerConnection.setLocalDescription(answerDescription);
+  console.log('[WebRTC] Receiver set local description (answer) successfully');
+
+  // 5. Now that local description is set, add all caller offer candidates safely
   const seenOfferCandidates = new Set();
+  const addOfferCandidate = async (cand) => {
+    if (!cand || !cand.candidate) return;
+    const key = `${cand.candidate}_${cand.sdpMid}_${cand.sdpMLineIndex}`;
+    if (seenOfferCandidates.has(key)) return;
+    seenOfferCandidates.add(key);
+    await addCandidateToPeer(peerConnection, cand);
+  };
+
   if (Array.isArray(call.offerCandidates)) {
     for (const cand of call.offerCandidates) {
-      const key = `${cand.candidate}_${cand.sdpMid}_${cand.sdpMLineIndex}`;
-      if (!seenOfferCandidates.has(key)) {
-        seenOfferCandidates.add(key);
-        addCandidateToPeer(peerConnection, cand);
-      }
+      addOfferCandidate(cand);
     }
   }
 
-  // 4. Create Answer SDP, set local description & wait for ICE gathering
-  const answerDescription = await peerConnection.createAnswer();
-  await peerConnection.setLocalDescription(answerDescription);
-  await waitForIceGathering(peerConnection, 1200);
-
   const localAnswer = peerConnection.localDescription || answerDescription;
 
-  // 5. Update conversation with answer (never pass empty array to arrayUnion)
+  // 6. Update conversation with answer
   const updatePayload = {
     'activeCall.status': 'active',
     'activeCall.answer': {
@@ -691,7 +647,7 @@ export async function answerCall({
     flushAnswerBatch();
   }
 
-  // 6. Listen for ongoing offer candidates from caller & call end
+  // 7. Listen for ongoing offer candidates from caller & call end
   const unsub = onSnapshot(convRef, (snapshot) => {
     const data = snapshot.data();
     if (!data || !data.activeCall) return;
@@ -705,11 +661,7 @@ export async function answerCall({
 
     if (Array.isArray(currentCall.offerCandidates)) {
       for (const cand of currentCall.offerCandidates) {
-        const key = `${cand.candidate}_${cand.sdpMid}_${cand.sdpMLineIndex}`;
-        if (!seenOfferCandidates.has(key)) {
-          seenOfferCandidates.add(key);
-          addCandidateToPeer(peerConnection, cand);
-        }
+        addOfferCandidate(cand);
       }
     }
   });
