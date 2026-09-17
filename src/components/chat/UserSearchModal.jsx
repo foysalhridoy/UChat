@@ -70,7 +70,7 @@ export function UserSearchModal({
             type="text"
             className="search-input"
             style={{ borderRadius: 'var(--radius-md)' }}
-            placeholder="Search by username or email..."
+            placeholder="Search by username..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             autoFocus

@@ -13,9 +13,9 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Username uniqueness claims
+    // Username uniqueness claims and availability lookup
     match /usernames/{username} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow create, update, delete: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
     }
 

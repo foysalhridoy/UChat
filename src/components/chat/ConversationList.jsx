@@ -21,6 +21,9 @@ export function ConversationList({
   const filtered = conversations.filter((conv) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
+    if (conv.isGroup) {
+      return (conv.groupName || '').toLowerCase().includes(q);
+    }
     const otherUid = conv.participants?.find(uid => uid !== currentUserId);
     const data = conv.participantData?.[otherUid];
     const name = (data?.displayName || '').toLowerCase();

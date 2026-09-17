@@ -5,7 +5,7 @@ import { useToast } from '../context/ToastContext';
 import { isFirebaseConfigured } from '../services/firebase';
 
 export function LoginPage({ onNavigate }) {
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -20,14 +20,14 @@ export function LoginPage({ onNavigate }) {
       return;
     }
 
-    if (!email.trim() || !password) {
-      setError('Please enter both email and password.');
+    if (!identifier.trim() || !password) {
+      setError('Please enter both username and password.');
       return;
     }
 
     try {
       setLoading(true);
-      await loginUser(email, password);
+      await loginUser(identifier, password);
       showToast('Welcome back to UChat!', 'success');
       onNavigate('chat');
     } catch (err) {
@@ -73,7 +73,7 @@ export function LoginPage({ onNavigate }) {
             </div>
           </div>
           <h1 className="auth-title">Welcome back</h1>
-          <p className="auth-subtitle">Sign in to your UChat account to continue</p>
+          <p className="auth-subtitle">Sign in with your username and password</p>
         </div>
 
         {error && (
@@ -85,16 +85,18 @@ export function LoginPage({ onNavigate }) {
 
         <form className="auth-form" onSubmit={handleSubmit}>
           <div className="input-group">
-            <label className="input-label" htmlFor="login-email">Email Address</label>
+            <label className="input-label" htmlFor="login-username">Username or Email</label>
             <input
-              id="login-email"
-              type="email"
+              id="login-username"
+              type="text"
               className="input-field"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              placeholder="e.g. rahim23"
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
               required
-              autoComplete="email"
+              autoComplete="username"
+              autoCapitalize="none"
+              autoCorrect="off"
             />
           </div>
 

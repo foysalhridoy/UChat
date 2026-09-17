@@ -43,9 +43,10 @@ export function subscribeMessages(conversationId, callback) {
 }
 
 /**
- * Send a message and update conversation meta
+ * Send a message and update conversation meta.
+ * For group messages pass groupParticipants (array of uids).
  */
-export async function sendMessage(conversationId, senderId, receiverId, text) {
+export async function sendMessage(conversationId, senderId, receiverIdOrParticipants, text) {
   if (!isFirebaseConfigured || !db) {
     throw new Error('Firebase is not configured.');
   }
@@ -53,23 +54,40 @@ export async function sendMessage(conversationId, senderId, receiverId, text) {
   const trimmedText = text.trim();
   if (!trimmedText) return;
 
+  // Support both 1-to-1 (receiverId string) and group (participants array)
+  const isGroup = Array.isArray(receiverIdOrParticipants);
+  const receiverId = isGroup ? null : receiverIdOrParticipants;
+  const groupParticipants = isGroup ? receiverIdOrParticipants : null;
+
   const messagesRef = collection(db, 'conversations', conversationId, 'messages');
   const convRef = doc(db, 'conversations', conversationId);
 
   // 1. Add message to subcollection
   const messageData = {
     senderId,
-    receiverId,
+    receiverId: receiverId || '',
     text: trimmedText,
     type: 'text',
     createdAt: serverTimestamp(),
-    seen: false,
+    seen: isGroup ? false : false,
     seenBy: [senderId]
   };
 
   const newMsgRef = await addDoc(messagesRef, messageData);
 
-  // 2. Update conversation header
+  // 2. Build unread count increments
+  const unreadUpdates = {};
+  if (isGroup && groupParticipants) {
+    groupParticipants
+      .filter((uid) => uid !== senderId)
+      .forEach((uid) => {
+        unreadUpdates[`unreadCounts.${uid}`] = increment(1);
+      });
+  } else if (receiverId) {
+    unreadUpdates[`unreadCounts.${receiverId}`] = increment(1);
+  }
+
+  // 3. Update conversation header
   await updateDoc(convRef, {
     lastMessage: {
       text: trimmedText,
@@ -78,12 +96,13 @@ export async function sendMessage(conversationId, senderId, receiverId, text) {
       seen: false
     },
     updatedAt: serverTimestamp(),
-    [`unreadCounts.${receiverId}`]: increment(1),
-    [`typing.${senderId}`]: deleteField() // clear typing state on send
+    [`typing.${senderId}`]: deleteField(),
+    ...unreadUpdates
   });
 
   return newMsgRef.id;
 }
+
 
 
 /**

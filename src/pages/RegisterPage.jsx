@@ -1,18 +1,60 @@
-import React, { useState } from 'react';
-import { MessageSquare, ArrowLeft, AlertCircle, Loader2 } from 'lucide-react';
-import { registerUser, getFriendlyErrorMessage } from '../services/authService';
+import React, { useState, useEffect } from 'react';
+import { MessageSquare, ArrowLeft, AlertCircle, Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import { registerUser, checkUsernameAvailability, getFriendlyErrorMessage } from '../services/authService';
 import { useToast } from '../context/ToastContext';
 import { isFirebaseConfigured } from '../services/firebase';
-import { isValidUsername, validatePassword, isValidEmail } from '../utils/validation';
+import { isValidUsername, validatePassword } from '../utils/validation';
 
 export function RegisterPage({ onNavigate }) {
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
-  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  
+  // Real-time username availability state
+  const [usernameStatus, setUsernameStatus] = useState(null); // 'checking' | 'available' | 'taken' | 'invalid' | null
+  const [statusMessage, setStatusMessage] = useState('');
+
   const { showToast } = useToast();
+
+  // Debounced check for username availability
+  useEffect(() => {
+    const clean = username.trim().toLowerCase();
+    if (!clean) {
+      setUsernameStatus(null);
+      setStatusMessage('');
+      return;
+    }
+
+    if (!isValidUsername(clean)) {
+      setUsernameStatus('invalid');
+      setStatusMessage('3-20 letters, numbers, or underscores');
+      return;
+    }
+
+    setUsernameStatus('checking');
+    setStatusMessage('Checking availability...');
+
+    const timer = setTimeout(async () => {
+      try {
+        const res = await checkUsernameAvailability(clean);
+        if (res.available) {
+          setUsernameStatus('available');
+          setStatusMessage('Username is available!');
+        } else {
+          setUsernameStatus('taken');
+          setStatusMessage('Username is already taken');
+        }
+      } catch (err) {
+        // If firestore rules block unauthenticated reads or offline, we will validate on submit
+        setUsernameStatus(null);
+        setStatusMessage('');
+      }
+    }, 450);
+
+    return () => clearTimeout(timer);
+  }, [username]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -28,8 +70,8 @@ export function RegisterPage({ onNavigate }) {
       return;
     }
 
-    if (!isValidEmail(email)) {
-      setError('Please enter a valid email address.');
+    if (usernameStatus === 'taken') {
+      setError('This username is already taken. Please choose another username.');
       return;
     }
 
@@ -42,7 +84,6 @@ export function RegisterPage({ onNavigate }) {
     try {
       setLoading(true);
       await registerUser({
-        email,
         password,
         username,
         displayName: displayName.trim() || username
@@ -92,7 +133,7 @@ export function RegisterPage({ onNavigate }) {
             </div>
           </div>
           <h1 className="auth-title">Create an account</h1>
-          <p className="auth-subtitle">Join UChat and connect across borders</p>
+          <p className="auth-subtitle">Choose a unique username to get started</p>
         </div>
 
         {error && (
@@ -104,7 +145,24 @@ export function RegisterPage({ onNavigate }) {
 
         <form className="auth-form" onSubmit={handleSubmit}>
           <div className="input-group">
-            <label className="input-label" htmlFor="reg-username">Username</label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <label className="input-label" htmlFor="reg-username">Unique Username</label>
+              {usernameStatus === 'checking' && (
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <Loader2 size={12} className="spinner" /> Checking...
+                </span>
+              )}
+              {usernameStatus === 'available' && (
+                <span style={{ fontSize: '0.75rem', color: '#10b981', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 500 }}>
+                  <CheckCircle2 size={13} /> Available
+                </span>
+              )}
+              {usernameStatus === 'taken' && (
+                <span style={{ fontSize: '0.75rem', color: '#ef4444', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 500 }}>
+                  <XCircle size={13} /> Already taken
+                </span>
+              )}
+            </div>
             <input
               id="reg-username"
               type="text"
@@ -115,9 +173,17 @@ export function RegisterPage({ onNavigate }) {
               required
               autoComplete="username"
               maxLength={20}
+              style={{
+                borderColor:
+                  usernameStatus === 'available'
+                    ? '#10b981'
+                    : usernameStatus === 'taken'
+                    ? '#ef4444'
+                    : undefined
+              }}
             />
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              Letters, numbers, underscores (3-20 chars)
+              Letters, numbers, underscores (3-20 chars). Must be unique.
             </span>
           </div>
 
@@ -132,20 +198,6 @@ export function RegisterPage({ onNavigate }) {
               onChange={(e) => setDisplayName(e.target.value)}
               autoComplete="name"
               maxLength={40}
-            />
-          </div>
-
-          <div className="input-group">
-            <label className="input-label" htmlFor="reg-email">Email Address</label>
-            <input
-              id="reg-email"
-              type="email"
-              className="input-field"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              autoComplete="email"
             />
           </div>
 
@@ -165,7 +217,7 @@ export function RegisterPage({ onNavigate }) {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || usernameStatus === 'taken'}
             className="btn btn-primary auth-submit-btn"
           >
             {loading ? (

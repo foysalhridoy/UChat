@@ -153,7 +153,7 @@ export function ProfileSettingsModal({ isOpen, onClose }) {
           </div>
 
           <div className="input-group" style={{ margin: 0 }}>
-            <span className="input-label">Email</span>
+            <span className="input-label">Account Type</span>
             <div
               style={{
                 padding: '10px 12px',
@@ -165,9 +165,11 @@ export function ProfileSettingsModal({ isOpen, onClose }) {
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap'
               }}
-              title={userProfile?.email}
+              title={userProfile?.email?.endsWith('@uchat.local') ? 'Direct Username Login' : userProfile?.email}
             >
-              {userProfile?.email || 'N/A'}
+              {userProfile?.email?.endsWith('@uchat.local') || userProfile?.isUsernameOnly
+                ? 'Username Account'
+                : userProfile?.email || 'Active'}
             </div>
           </div>
         </div>

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, Phone, Video, Info } from 'lucide-react';
+import { ArrowLeft, Phone, Video, Info, Users } from 'lucide-react';
 import { Avatar } from '../common/Avatar';
 import { subscribeUserProfile, getUserProfile } from '../../services/userService';
 import { formatLastSeen } from '../../utils/formatting';
@@ -8,69 +8,62 @@ import { useToast } from '../../context/ToastContext';
 export function ChatHeader({
   targetUser,
   targetUserId,
+  conversation,
   onBack,
   onViewProfile,
-  onStartCall
+  onStartCall,
+  onOpenGroupInfo
 }) {
+  const isGroup = conversation?.isGroup === true;
   const [liveUser, setLiveUser] = useState(targetUser || null);
   const { showToast } = useToast();
 
-  // Re-sync basic static metadata only when the active chat user changes
+  // Re-sync basic static metadata only when the active chat user changes (1-to-1 only)
   useEffect(() => {
-    if (targetUser) {
+    if (!isGroup && targetUser) {
       setLiveUser((prev) => {
         if (!prev) return targetUser;
         return {
           ...targetUser,
-          ...prev, // Keep live properties from users/{id} subscription!
+          ...prev,
           displayName: prev.displayName || targetUser.displayName,
           username: prev.username || targetUser.username,
           photoURL: prev.photoURL || targetUser.photoURL,
-          // CRITICAL: Strictly preserve real-time status and lastSeen from the user document
           status: prev.status || targetUser.status || 'offline',
           lastSeen: prev.lastSeen || targetUser.lastSeen
         };
       });
     }
-  }, [targetUserId]);
+  }, [targetUserId, isGroup]);
 
-  // Subscribe to target user's real-time presence/profile
+  // Subscribe to target user's real-time presence/profile (1-to-1 only)
   useEffect(() => {
-    if (!targetUserId) return;
-
+    if (isGroup || !targetUserId) return;
     let isMounted = true;
-
-    // Fetch immediately to ensure name and online status are never missing
     getUserProfile(targetUserId).then((data) => {
-      if (isMounted && data) {
-        setLiveUser((prev) => ({ ...prev, ...data }));
-      }
+      if (isMounted && data) setLiveUser((prev) => ({ ...prev, ...data }));
     });
-
     const unsubscribe = subscribeUserProfile(targetUserId, (userData) => {
-      if (isMounted && userData) {
-        setLiveUser((prev) => ({ ...prev, ...userData }));
-      }
+      if (isMounted && userData) setLiveUser((prev) => ({ ...prev, ...userData }));
     });
-    return () => {
-      isMounted = false;
-      unsubscribe();
-    };
-  }, [targetUserId]);
+    return () => { isMounted = false; unsubscribe(); };
+  }, [targetUserId, isGroup]);
 
+  // ── Group info ──
+  const groupName = conversation?.groupName || 'Group';
+  const activeMembersCount = isGroup
+    ? (conversation?.participants || []).filter(uid => conversation?.participantMap?.[uid] !== false).length
+    : 0;
+
+  // ── 1-to-1 info ──
   const displayName = liveUser?.displayName || liveUser?.username || targetUser?.displayName || targetUser?.username || 'User';
-  // Use liveUser status as highest priority since it comes directly from users/{id}
   const status = liveUser?.status || targetUser?.status || 'offline';
   const lastSeen = liveUser?.lastSeen || targetUser?.lastSeen;
   const statusText = formatLastSeen(status, lastSeen);
 
-  const handleCallMock = (type) => {
-    showToast(`${type} calling will be enabled in the upcoming WebRTC release!`, 'info');
-  };
-
   return (
     <header className="chat-header">
-      {/* Mobile Back Button with comfortable touch target */}
+      {/* Mobile Back Button */}
       <button
         onClick={onBack}
         className="btn btn-ghost btn-icon chat-back-btn"
@@ -80,26 +73,40 @@ export function ChatHeader({
         <ArrowLeft size={22} />
       </button>
 
-      {/* Tappable Contact Area (Telegram / WhatsApp style) */}
+      {/* Contact / Group Area */}
       <div
         className="chat-header-user"
-        onClick={() => onViewProfile && onViewProfile(liveUser || targetUser)}
+        onClick={() => isGroup ? onOpenGroupInfo && onOpenGroupInfo() : onViewProfile && onViewProfile(liveUser || targetUser)}
         role="button"
         tabIndex={0}
-        title="View profile info"
+        title={isGroup ? 'Group info' : 'View profile info'}
       >
-        <Avatar
-          src={liveUser?.photoURL || targetUser?.photoURL}
-          name={displayName}
-          size="md"
-          status={status}
-          showStatus={true}
-        />
+        {/* Avatar */}
+        {isGroup ? (
+          <div style={{
+            width: 38, height: 38, borderRadius: '50%', flexShrink: 0,
+            background: 'linear-gradient(135deg, var(--primary), #7DA0CA)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '1rem', fontWeight: 700, color: '#fff'
+          }}>
+            {groupName[0]?.toUpperCase() || <Users size={18} />}
+          </div>
+        ) : (
+          <Avatar
+            src={liveUser?.photoURL || targetUser?.photoURL}
+            name={displayName}
+            size="md"
+            status={status}
+            showStatus={true}
+          />
+        )}
 
         <div className="chat-header-meta">
-          <h2 className="chat-header-title">{displayName}</h2>
-          <span className={`chat-header-status ${status === 'online' ? 'online' : ''}`}>
-            {statusText}
+          <h2 className="chat-header-title">{isGroup ? groupName : displayName}</h2>
+          <span className={`chat-header-status ${!isGroup && status === 'online' ? 'online' : ''}`}>
+            {isGroup
+              ? `${activeMembersCount} members`
+              : statusText}
           </span>
         </div>
       </div>
@@ -108,8 +115,12 @@ export function ChatHeader({
       <div className="chat-header-actions">
         <button
           onClick={() => {
-            const targetUserObj = { ...(targetUser || {}), ...(liveUser || {}), uid: targetUserId, id: targetUserId };
-            onStartCall && onStartCall(targetUserObj, 'audio');
+            if (isGroup) {
+              onStartCall && onStartCall(conversation, 'audio');
+            } else {
+              const targetUserObj = { ...(targetUser || {}), ...(liveUser || {}), uid: targetUserId, id: targetUserId };
+              onStartCall && onStartCall(targetUserObj, 'audio');
+            }
           }}
           className="btn btn-ghost btn-icon call-btn"
           title="Voice call"
@@ -120,8 +131,12 @@ export function ChatHeader({
 
         <button
           onClick={() => {
-            const targetUserObj = { ...(targetUser || {}), ...(liveUser || {}), uid: targetUserId, id: targetUserId };
-            onStartCall && onStartCall(targetUserObj, 'video');
+            if (isGroup) {
+              onStartCall && onStartCall(conversation, 'video');
+            } else {
+              const targetUserObj = { ...(targetUser || {}), ...(liveUser || {}), uid: targetUserId, id: targetUserId };
+              onStartCall && onStartCall(targetUserObj, 'video');
+            }
           }}
           className="btn btn-ghost btn-icon call-btn"
           title="Video call"
@@ -131,14 +146,15 @@ export function ChatHeader({
         </button>
 
         <button
-          onClick={() => onViewProfile && onViewProfile(liveUser || targetUser)}
+          onClick={() => isGroup ? onOpenGroupInfo && onOpenGroupInfo() : onViewProfile && onViewProfile(liveUser || targetUser)}
           className="btn btn-ghost btn-icon"
-          title="Contact info"
-          aria-label="Contact info"
+          title={isGroup ? 'Group info' : 'Contact info'}
+          aria-label={isGroup ? 'Group info' : 'Contact info'}
         >
-          <Info size={19} />
+          {isGroup ? <Users size={19} /> : <Info size={19} />}
         </button>
       </div>
     </header>
   );
 }
+
