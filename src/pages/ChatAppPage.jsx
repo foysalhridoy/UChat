@@ -143,6 +143,7 @@ export function ChatAppPage() {
   const [activeCall, setActiveCall] = useState(null);
   const [callLocalStream, setCallLocalStream] = useState(null);
   const [callRemoteStream, setCallRemoteStream] = useState(null);
+  const [remoteStreamVersion, setRemoteStreamVersion] = useState(0);
   const [callStatus, setCallStatus] = useState('calling'); // 'calling' | 'connecting' | 'connected'
   const [callError, setCallError] = useState(null);
   const callSessionRef = React.useRef(null);
@@ -240,6 +241,7 @@ export function ChatAppPage() {
     setActiveCall(null);
     setCallLocalStream(null);
     setCallRemoteStream(null);
+    setRemoteStreamVersion(0);
     setCallStatus('calling');
   };
 
@@ -283,6 +285,7 @@ export function ChatAppPage() {
         type,
         onRemoteStream: (stream) => {
           setCallRemoteStream(stream);
+          setRemoteStreamVersion((v) => v + 1);
           setCallStatus('connected');
           if (!callConnectedAtRef.current) {
             callConnectedAtRef.current = Date.now();
@@ -372,6 +375,7 @@ export function ChatAppPage() {
         call: { ...callToAnswer, conversationId: convId },
         onRemoteStream: (stream) => {
           setCallRemoteStream(stream);
+          setRemoteStreamVersion((v) => v + 1);
           setCallStatus('connected');
           if (!callConnectedAtRef.current) {
             callConnectedAtRef.current = Date.now();
@@ -806,9 +810,11 @@ export function ChatAppPage() {
       {/* WebRTC Active Call Screen Modal */}
       {activeCall && (
         <ActiveCallModal
+          key={activeCall.callId || activeCall.conversationId}
           call={activeCall}
           localStream={callLocalStream}
           remoteStream={callRemoteStream}
+          streamVersion={remoteStreamVersion}
           callStatus={callStatus}
           onEndCall={handleEndActiveCall}
         />

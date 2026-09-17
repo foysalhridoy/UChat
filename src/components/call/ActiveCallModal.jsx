@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Mic, MicOff, Video, VideoOff, PhoneOff, Volume2, ShieldCheck } from 'lucide-react';
 import { Avatar } from '../common/Avatar';
+import { unlockAudio } from '../../services/callService';
 
 export function ActiveCallModal({
   call,
   localStream,
   remoteStream,
+  streamVersion = 0,
   callStatus = 'calling', // 'calling' | 'connecting' | 'connected'
   onEndCall
 }) {
@@ -13,86 +15,37 @@ export function ActiveCallModal({
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [duration, setDuration] = useState(0);
   const [audioBlocked, setAudioBlocked] = useState(false);
-  const [remoteTracksCount, setRemoteTracksCount] = useState(0);
 
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const remoteAudioRef = useRef(null);
 
-  // Monitor incoming tracks so video and audio updates trigger immediately
+  const isVideoCall = call?.type === 'video';
+  const otherName = call?.otherUserName || call?.receiverName || call?.callerName || 'User';
+  const otherPhoto = call?.otherUserPhoto || call?.receiverPhoto || call?.callerPhoto || '';
+
+  // Check if remote stream has active video track
+  const hasRemoteVideoTrack = Boolean(
+    isVideoCall &&
+    remoteStream &&
+    typeof remoteStream.getVideoTracks === 'function' &&
+    remoteStream.getVideoTracks().length > 0 &&
+    remoteStream.getVideoTracks().some((t) => t.enabled)
+  );
+
+  // Synchronize remote media stream to appropriate media element
   useEffect(() => {
     if (!remoteStream) return;
 
-    const updateTracks = () => {
-      setRemoteTracksCount(remoteStream.getTracks().length);
-    };
-
-    updateTracks();
-    remoteStream.addEventListener('addtrack', updateTracks);
-    remoteStream.addEventListener('removetrack', updateTracks);
-
-    remoteStream.getTracks().forEach((track) => {
-      track.addEventListener('unmute', updateTracks);
-      track.addEventListener('mute', updateTracks);
-      track.addEventListener('ended', updateTracks);
-    });
-
-    return () => {
-      remoteStream.removeEventListener('addtrack', updateTracks);
-      remoteStream.removeEventListener('removetrack', updateTracks);
-    };
-  }, [remoteStream]);
-
-  // Callback ref for remote video
-  const setRemoteVideoRef = (element) => {
-    remoteVideoRef.current = element;
-    if (element && remoteStream) {
-      if (element.srcObject !== remoteStream) {
-        element.srcObject = remoteStream;
-      }
-      element.play().catch((err) => {
-        console.warn('Remote video unmuted play blocked, falling back to muted:', err);
-        element.muted = true;
-        element.play().catch(() => {});
-        setAudioBlocked(true);
-      });
-    }
-  };
-
-  // Callback ref for remote audio (for voice calls)
-  const setRemoteAudioRef = (element) => {
-    remoteAudioRef.current = element;
-    if (element && remoteStream) {
-      element.volume = 1.0;
-      if (element.srcObject !== remoteStream) {
-        element.srcObject = remoteStream;
-      }
-      element.play().catch((err) => {
-        console.warn('Remote audio autoplay blocked:', err);
-        setAudioBlocked(true);
-      });
-    }
-  };
-
-  // Callback ref for local video preview PIP
-  const setLocalVideoRef = (element) => {
-    localVideoRef.current = element;
-    if (element && localStream) {
-      if (element.srcObject !== localStream) {
-        element.srcObject = localStream;
-      }
-      element.play().catch(() => {});
-    }
-  };
-
-  // Synchronize when remoteStream or tracks change
-  useEffect(() => {
-    if (remoteStream) {
+    if (isVideoCall) {
+      // In video call: <video> element handles both video and voice audio
       if (remoteVideoRef.current) {
         if (remoteVideoRef.current.srcObject !== remoteStream) {
           remoteVideoRef.current.srcObject = remoteStream;
         }
-        remoteVideoRef.current.play().catch(() => {
+        remoteVideoRef.current.muted = false;
+        remoteVideoRef.current.play().catch((err) => {
+          console.warn('[ActiveCallModal] Remote video unmuted play blocked, falling back to muted:', err);
           if (remoteVideoRef.current) {
             remoteVideoRef.current.muted = true;
             remoteVideoRef.current.play().catch(() => {});
@@ -100,20 +53,35 @@ export function ActiveCallModal({
           setAudioBlocked(true);
         });
       }
+      // Detach from <audio> to prevent dual-sink lock on mobile
       if (remoteAudioRef.current) {
-        remoteAudioRef.current.volume = 1.0;
+        remoteAudioRef.current.srcObject = null;
+      }
+    } else {
+      // In voice call: <audio> element handles voice audio
+      if (remoteAudioRef.current) {
         if (remoteAudioRef.current.srcObject !== remoteStream) {
           remoteAudioRef.current.srcObject = remoteStream;
         }
-        remoteAudioRef.current.play().catch(() => setAudioBlocked(true));
+        remoteAudioRef.current.volume = 1.0;
+        remoteAudioRef.current.muted = false;
+        remoteAudioRef.current.play().catch((err) => {
+          console.warn('[ActiveCallModal] Remote audio autoplay blocked:', err);
+          setAudioBlocked(true);
+        });
+      }
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = null;
       }
     }
-  }, [remoteStream, remoteTracksCount]);
+  }, [remoteStream, streamVersion, isVideoCall]);
 
-  // Synchronize when localStream changes
+  // Synchronize local video preview PIP
   useEffect(() => {
     if (localVideoRef.current && localStream) {
-      localVideoRef.current.srcObject = localStream;
+      if (localVideoRef.current.srcObject !== localStream) {
+        localVideoRef.current.srcObject = localStream;
+      }
       localVideoRef.current.play().catch(() => {});
     }
   }, [localStream]);
@@ -132,15 +100,22 @@ export function ActiveCallModal({
   }, [callStatus]);
 
   // User gesture handler to unlock mobile audio autoplay if blocked by browser
-  const handleUnlockAudio = () => {
-    setAudioBlocked(false);
-    if (remoteAudioRef.current) {
-      remoteAudioRef.current.volume = 1.0;
-      remoteAudioRef.current.muted = false;
-      remoteAudioRef.current.play().catch(() => {});
+  const handleUserInteract = () => {
+    unlockAudio();
+    if (audioBlocked) {
+      setAudioBlocked(false);
     }
-    if (remoteVideoRef.current) {
-      remoteVideoRef.current.play().catch(() => {});
+    if (isVideoCall) {
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.muted = false;
+        remoteVideoRef.current.play().catch(() => {});
+      }
+    } else {
+      if (remoteAudioRef.current) {
+        remoteAudioRef.current.volume = 1.0;
+        remoteAudioRef.current.muted = false;
+        remoteAudioRef.current.play().catch(() => {});
+      }
     }
   };
 
@@ -170,31 +145,19 @@ export function ActiveCallModal({
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const isVideoCall = call.type === 'video';
-  const otherName = call.otherUserName || call.receiverName || call.callerName || 'User';
-  const otherPhoto = call.otherUserPhoto || call.receiverPhoto || call.callerPhoto || '';
-
-  // Check if remote stream has active video track
-  const hasRemoteVideoTrack = Boolean(
-    remoteStream &&
-      remoteStream.getVideoTracks &&
-      remoteStream.getVideoTracks().length > 0 &&
-      remoteStream.getVideoTracks().some((t) => t.enabled)
-  );
-
   return (
     <div
       className="call-overlay"
       role="dialog"
       aria-modal="true"
       aria-label="Active Call"
-      onClick={audioBlocked ? handleUnlockAudio : undefined}
+      onClick={handleUserInteract}
     >
       <div className="active-call-modal">
         {/* Mobile Browser Autoplay Unmute Banner */}
         {audioBlocked && (
           <div
-            onClick={handleUnlockAudio}
+            onClick={handleUserInteract}
             style={{
               position: 'absolute',
               top: 16,
@@ -235,24 +198,37 @@ export function ActiveCallModal({
 
         {isVideoCall ? (
           /* Video Call Stage */
-          <div className="call-video-stage">
-            {/* Remote video element - plays both video and audio tracks */}
+          <div className="call-video-stage" style={{ position: 'relative', overflow: 'hidden' }}>
+            {/* Remote video element - ALWAYS mounted so browser never halts decoding or audio */}
             <video
-              ref={setRemoteVideoRef}
+              ref={remoteVideoRef}
               autoPlay
               playsInline
               className="remote-video"
               style={{
-                display: hasRemoteVideoTrack ? 'block' : 'none',
+                position: 'absolute',
+                top: 0,
+                left: 0,
                 width: '100%',
                 height: '100%',
-                objectFit: 'cover'
+                objectFit: 'cover',
+                opacity: hasRemoteVideoTrack ? 1 : 0,
+                zIndex: hasRemoteVideoTrack ? 1 : 0,
+                transition: 'opacity 0.3s ease'
               }}
             />
 
             {/* Waiting/Connecting Avatar placeholder when remote video has not arrived yet */}
             {!hasRemoteVideoTrack && (
-              <div className="call-audio-stage" style={{ width: '100%', height: '100%' }}>
+              <div
+                className="call-audio-stage"
+                style={{
+                  position: 'relative',
+                  zIndex: 2,
+                  width: '100%',
+                  height: '100%'
+                }}
+              >
                 <div className="audio-call-avatar-wrapper">
                   {callStatus === 'calling' && (
                     <>
@@ -276,9 +252,9 @@ export function ActiveCallModal({
 
             {/* Local Video Thumbnail PIP */}
             {localStream && localStream.getVideoTracks().length > 0 && !isVideoOff && (
-              <div className="local-video-pip">
+              <div className="local-video-pip" style={{ zIndex: 10 }}>
                 <video
-                  ref={setLocalVideoRef}
+                  ref={localVideoRef}
                   autoPlay
                   playsInline
                   muted
@@ -341,7 +317,10 @@ export function ActiveCallModal({
           {/* Mute Microphone */}
           <button
             type="button"
-            onClick={toggleMic}
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleMic();
+            }}
             className={`call-control-toggle-btn ${isMuted ? 'off' : ''}`}
             title={isMuted ? 'Unmute microphone' : 'Mute microphone'}
             aria-label={isMuted ? 'Unmute microphone' : 'Mute microphone'}
@@ -353,7 +332,10 @@ export function ActiveCallModal({
           {isVideoCall && (
             <button
               type="button"
-              onClick={toggleVideo}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleVideo();
+              }}
               className={`call-control-toggle-btn ${isVideoOff ? 'off' : ''}`}
               title={isVideoOff ? 'Turn on camera' : 'Turn off camera'}
               aria-label={isVideoOff ? 'Turn on camera' : 'Turn off camera'}
@@ -365,7 +347,10 @@ export function ActiveCallModal({
           {/* End Call */}
           <button
             type="button"
-            onClick={onEndCall}
+            onClick={(e) => {
+              e.stopPropagation();
+              onEndCall();
+            }}
             className="call-action-circle-btn end"
             title="End call"
             aria-label="End call"
@@ -375,15 +360,15 @@ export function ActiveCallModal({
           </button>
         </div>
 
-        {/* Remote audio playback element - position fixed with 0.01 opacity so mobile browser thread never pauses it */}
+        {/* Remote audio playback element - position fixed offscreen so mobile browser never pauses it */}
         <audio
-          ref={setRemoteAudioRef}
+          ref={remoteAudioRef}
           autoPlay
           playsInline
           style={{
             position: 'fixed',
-            bottom: 0,
-            right: 0,
+            top: -1000,
+            left: -1000,
             width: 1,
             height: 1,
             opacity: 0.01,

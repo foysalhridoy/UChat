@@ -17,8 +17,10 @@ const rtcConfig = {
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' }
-  ]
+    { urls: 'stun:stun4.l.google.com:19302' },
+    { urls: 'stun:global.stun.twilio.com:3478' }
+  ],
+  iceCandidatePoolSize: 10
 };
 
 // Web Audio API Ringtone Synthesizer
@@ -134,7 +136,11 @@ function sanitizeCandidate(candidate) {
  * Safely add an ICE candidate to an RTCPeerConnection
  */
 async function addCandidateToPeer(peerConnection, cand) {
-  if (!cand || !cand.candidate) return;
+  if (!cand || !cand.candidate || !peerConnection || peerConnection.signalingState === 'closed') return;
+  if (!peerConnection.remoteDescription || !peerConnection.remoteDescription.type) {
+    console.warn('[WebRTC] Skipping candidate - remoteDescription not set yet');
+    return;
+  }
   try {
     const candidateInit = {
       candidate: cand.candidate,
@@ -165,12 +171,17 @@ export async function getLocalMediaStream(type = 'video') {
   }
 
   const wantsVideo = type === 'video';
+  const audioConstraints = {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true
+  };
 
   if (wantsVideo) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: { facingMode: 'user' }
+        audio: audioConstraints,
+        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
       });
       stream.getTracks().forEach((t) => {
         t.enabled = true;
@@ -180,7 +191,7 @@ export async function getLocalMediaStream(type = 'video') {
       console.warn('Camera with facingMode failed, trying basic video:', videoErr);
       try {
         const fallbackStream = await navigator.mediaDevices.getUserMedia({
-          audio: true,
+          audio: audioConstraints,
           video: true
         });
         fallbackStream.getTracks().forEach((t) => {
@@ -199,7 +210,13 @@ export async function getLocalMediaStream(type = 'video') {
 
 async function getLocalAudioStream() {
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      }
+    });
     stream.getTracks().forEach((t) => {
       t.enabled = true;
     });
@@ -259,25 +276,37 @@ export async function initiateCall({
   // Persistent MediaStream accumulator for all incoming tracks
   const remoteStream = new MediaStream();
 
+  const emitFreshRemoteStream = () => {
+    if (onRemoteStream && remoteStream.getTracks().length > 0) {
+      // Create a fresh MediaStream instance with all tracks so React state reference changes!
+      onRemoteStream(new MediaStream(remoteStream.getTracks()));
+    }
+  };
+
+  const handleIncomingTrack = (track) => {
+    if (!track) return;
+    track.enabled = true;
+    if (!remoteStream.getTracks().some((t) => t.id === track.id)) {
+      remoteStream.addTrack(track);
+    }
+    track.onunmute = () => {
+      console.log('[WebRTC] Caller track unmuted:', track.kind);
+      emitFreshRemoteStream();
+    };
+    track.onended = () => {
+      emitFreshRemoteStream();
+    };
+  };
+
   peerConnection.ontrack = (event) => {
-    console.log('[WebRTC] Caller ontrack:', event.track.kind);
+    console.log('[WebRTC] Caller ontrack:', event.track?.kind);
     stopRingtone();
     if (event.streams && event.streams[0]) {
-      event.streams[0].getTracks().forEach((track) => {
-        track.enabled = true;
-        if (!remoteStream.getTracks().some((t) => t.id === track.id)) {
-          remoteStream.addTrack(track);
-        }
-      });
+      event.streams[0].getTracks().forEach(handleIncomingTrack);
     } else if (event.track) {
-      event.track.enabled = true;
-      if (!remoteStream.getTracks().some((t) => t.id === event.track.id)) {
-        remoteStream.addTrack(event.track);
-      }
+      handleIncomingTrack(event.track);
     }
-    if (onRemoteStream) {
-      onRemoteStream(remoteStream);
-    }
+    emitFreshRemoteStream();
   };
 
   peerConnection.onconnectionstatechange = () => {
@@ -299,7 +328,7 @@ export async function initiateCall({
     }
   };
 
-  // Buffer ICE candidates before document creation, then batch flush
+  // Buffer ICE candidates before document creation, then fast batch flush
   const earlyCandidates = [];
   let isDocInitialized = false;
   const pendingBatch = [];
@@ -331,7 +360,7 @@ export async function initiateCall({
           batchTimeout = setTimeout(() => {
             batchTimeout = null;
             flushCandidatesBatch();
-          }, 200);
+          }, 60);
         }
       }
     }
@@ -389,6 +418,7 @@ export async function initiateCall({
   const seenAnswerCandidates = new Set();
   const answerQueue = [];
   let isRemoteDescSet = false;
+  let isSettingRemoteDesc = false;
 
   const addAnswerCandidate = async (cand) => {
     if (!cand || !cand.candidate) return;
@@ -396,7 +426,7 @@ export async function initiateCall({
     if (seenAnswerCandidates.has(key)) return;
     seenAnswerCandidates.add(key);
 
-    if (isRemoteDescSet && peerConnection.remoteDescription) {
+    if (isRemoteDescSet && !isSettingRemoteDesc && peerConnection.remoteDescription) {
       await addCandidateToPeer(peerConnection, cand);
     } else {
       answerQueue.push(cand);
@@ -421,11 +451,13 @@ export async function initiateCall({
     }
 
     // Set Remote Description from Answer
-    if (call.answer && !isRemoteDescSet) {
-      isRemoteDescSet = true;
+    if (call.answer && !isRemoteDescSet && !isSettingRemoteDesc) {
+      isSettingRemoteDesc = true;
       try {
         const answerDesc = new RTCSessionDescription(call.answer);
         await peerConnection.setRemoteDescription(answerDesc);
+        isRemoteDescSet = true;
+        isSettingRemoteDesc = false;
         console.log('[WebRTC] Caller set remote description (answer) successfully');
         stopRingtone();
         if (onCallActive) onCallActive();
@@ -436,6 +468,7 @@ export async function initiateCall({
           await addCandidateToPeer(peerConnection, cand);
         }
       } catch (err) {
+        isSettingRemoteDesc = false;
         console.warn('Set remote description error on caller:', err);
       }
     }
@@ -524,24 +557,35 @@ export async function answerCall({
   // Persistent MediaStream accumulator for remote tracks
   const remoteStream = new MediaStream();
 
+  const emitFreshRemoteStream = () => {
+    if (onRemoteStream && remoteStream.getTracks().length > 0) {
+      onRemoteStream(new MediaStream(remoteStream.getTracks()));
+    }
+  };
+
+  const handleIncomingTrack = (track) => {
+    if (!track) return;
+    track.enabled = true;
+    if (!remoteStream.getTracks().some((t) => t.id === track.id)) {
+      remoteStream.addTrack(track);
+    }
+    track.onunmute = () => {
+      console.log('[WebRTC] Receiver track unmuted:', track.kind);
+      emitFreshRemoteStream();
+    };
+    track.onended = () => {
+      emitFreshRemoteStream();
+    };
+  };
+
   peerConnection.ontrack = (event) => {
-    console.log('[WebRTC] Receiver ontrack:', event.track.kind);
+    console.log('[WebRTC] Receiver ontrack:', event.track?.kind);
     if (event.streams && event.streams[0]) {
-      event.streams[0].getTracks().forEach((track) => {
-        track.enabled = true;
-        if (!remoteStream.getTracks().some((t) => t.id === track.id)) {
-          remoteStream.addTrack(track);
-        }
-      });
+      event.streams[0].getTracks().forEach(handleIncomingTrack);
     } else if (event.track) {
-      event.track.enabled = true;
-      if (!remoteStream.getTracks().some((t) => t.id === event.track.id)) {
-        remoteStream.addTrack(event.track);
-      }
+      handleIncomingTrack(event.track);
     }
-    if (onRemoteStream) {
-      onRemoteStream(remoteStream);
-    }
+    emitFreshRemoteStream();
   };
 
   peerConnection.onconnectionstatechange = () => {
@@ -595,7 +639,7 @@ export async function answerCall({
           answerBatchTimeout = setTimeout(() => {
             answerBatchTimeout = null;
             flushAnswerBatch();
-          }, 200);
+          }, 60);
         }
       }
     }
