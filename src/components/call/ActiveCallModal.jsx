@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Mic, MicOff, Video, VideoOff, PhoneOff, Volume2, ShieldCheck } from 'lucide-react';
 import { Avatar } from '../common/Avatar';
-import { unlockAudio } from '../../services/callService';
+import { unlockAudio, getActiveAudioContext } from '../../services/callService';
 
 export function ActiveCallModal({
   call,
@@ -19,6 +19,7 @@ export function ActiveCallModal({
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const remoteAudioRef = useRef(null);
+  const audioSourceRef = useRef(null);
 
   const isVideoCall = call?.type === 'video';
   const otherName = call?.otherUserName || call?.receiverName || call?.callerName || 'User';
@@ -33,19 +34,66 @@ export function ActiveCallModal({
     remoteStream.getVideoTracks().some((t) => t.enabled)
   );
 
+  // Hook Web Audio API directly to incoming audio tracks for bypass of HTMLMediaElement mobile blocks
+  useEffect(() => {
+    if (!remoteStream) return;
+
+    try {
+      const audioTracks = remoteStream.getAudioTracks();
+      if (audioTracks && audioTracks.length > 0) {
+        const ctx = getActiveAudioContext();
+        if (ctx) {
+          if (ctx.state === 'suspended') {
+            ctx.resume().catch(() => {});
+          }
+          if (audioSourceRef.current) {
+            try { audioSourceRef.current.disconnect(); } catch (e) {}
+          }
+          const streamToRoute = new MediaStream(audioTracks);
+          const sourceNode = ctx.createMediaStreamSource(streamToRoute);
+          sourceNode.connect(ctx.destination);
+          audioSourceRef.current = sourceNode;
+          console.log('[ActiveCallModal] Web Audio sink connected successfully!');
+        }
+      }
+    } catch (err) {
+      console.warn('[ActiveCallModal] Web Audio hook warning:', err);
+    }
+
+    return () => {
+      if (audioSourceRef.current) {
+        try { audioSourceRef.current.disconnect(); } catch (e) {}
+        audioSourceRef.current = null;
+      }
+    };
+  }, [remoteStream, streamVersion]);
+
   // Synchronize remote media stream to appropriate media element
   useEffect(() => {
     if (!remoteStream) return;
 
+    // In both voice and video calls, attach stream to dedicated audio element for direct sound playback
+    if (remoteAudioRef.current) {
+      if (remoteAudioRef.current.srcObject !== remoteStream) {
+        remoteAudioRef.current.srcObject = remoteStream;
+      }
+      remoteAudioRef.current.volume = 1.0;
+      remoteAudioRef.current.muted = false;
+      remoteAudioRef.current.play().catch((err) => {
+        console.warn('[ActiveCallModal] Remote audio play blocked by browser policy:', err);
+        setAudioBlocked(true);
+      });
+    }
+
     if (isVideoCall) {
-      // In video call: <video> element handles both video and voice audio
+      // In video call: <video> element handles visual display
       if (remoteVideoRef.current) {
         if (remoteVideoRef.current.srcObject !== remoteStream) {
           remoteVideoRef.current.srcObject = remoteStream;
         }
         remoteVideoRef.current.muted = false;
         remoteVideoRef.current.play().catch((err) => {
-          console.warn('[ActiveCallModal] Remote video unmuted play blocked, falling back to muted:', err);
+          console.warn('[ActiveCallModal] Remote video unmuted play blocked, falling back to muted video display:', err);
           if (remoteVideoRef.current) {
             remoteVideoRef.current.muted = true;
             remoteVideoRef.current.play().catch(() => {});
@@ -53,23 +101,7 @@ export function ActiveCallModal({
           setAudioBlocked(true);
         });
       }
-      // Detach from <audio> to prevent dual-sink lock on mobile
-      if (remoteAudioRef.current) {
-        remoteAudioRef.current.srcObject = null;
-      }
     } else {
-      // In voice call: <audio> element handles voice audio
-      if (remoteAudioRef.current) {
-        if (remoteAudioRef.current.srcObject !== remoteStream) {
-          remoteAudioRef.current.srcObject = remoteStream;
-        }
-        remoteAudioRef.current.volume = 1.0;
-        remoteAudioRef.current.muted = false;
-        remoteAudioRef.current.play().catch((err) => {
-          console.warn('[ActiveCallModal] Remote audio autoplay blocked:', err);
-          setAudioBlocked(true);
-        });
-      }
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = null;
       }
@@ -102,20 +134,21 @@ export function ActiveCallModal({
   // User gesture handler to unlock mobile audio autoplay if blocked by browser
   const handleUserInteract = () => {
     unlockAudio();
+    const ctx = getActiveAudioContext();
+    if (ctx && ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
     if (audioBlocked) {
       setAudioBlocked(false);
     }
-    if (isVideoCall) {
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.muted = false;
-        remoteVideoRef.current.play().catch(() => {});
-      }
-    } else {
-      if (remoteAudioRef.current) {
-        remoteAudioRef.current.volume = 1.0;
-        remoteAudioRef.current.muted = false;
-        remoteAudioRef.current.play().catch(() => {});
-      }
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.volume = 1.0;
+      remoteAudioRef.current.muted = false;
+      remoteAudioRef.current.play().catch(() => {});
+    }
+    if (isVideoCall && remoteVideoRef.current) {
+      remoteVideoRef.current.muted = false;
+      remoteVideoRef.current.play().catch(() => {});
     }
   };
 

@@ -18,10 +18,49 @@ const rtcConfig = {
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
     { urls: 'stun:stun4.l.google.com:19302' },
-    { urls: 'stun:global.stun.twilio.com:3478' }
+    { urls: 'stun:openrelay.metered.ca:80' },
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turns:openrelay.metered.ca:443?transport=tcp',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    }
   ],
   iceCandidatePoolSize: 10
 };
+
+// Global Web Audio Context for zero-latency, unblocked audio playback
+let globalAudioCtx = null;
+
+export function getActiveAudioContext() {
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return null;
+    if (!globalAudioCtx || globalAudioCtx.state === 'closed') {
+      globalAudioCtx = new AudioContext();
+    }
+    if (globalAudioCtx.state === 'suspended') {
+      globalAudioCtx.resume().catch(() => {});
+    }
+    return globalAudioCtx;
+  } catch (e) {
+    return null;
+  }
+}
 
 // Web Audio API Ringtone Synthesizer
 let audioCtx = null;
@@ -32,13 +71,10 @@ let ringtoneInterval = null;
  * This allows incoming/received audio to play unhindered by browser autoplay policy.
  */
 export function unlockAudio() {
+  getActiveAudioContext();
   try {
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    if (AudioContext) {
-      const ctx = new AudioContext();
-      if (ctx.state === 'suspended') {
-        ctx.resume().catch(() => {});
-      }
+    const ctx = getActiveAudioContext();
+    if (ctx) {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       gain.gain.setValueAtTime(0.0001, ctx.currentTime);
@@ -46,11 +82,6 @@ export function unlockAudio() {
       gain.connect(ctx.destination);
       osc.start();
       osc.stop(ctx.currentTime + 0.05);
-      setTimeout(() => {
-        try {
-          ctx.close();
-        } catch (e) {}
-      }, 500);
     }
   } catch (e) {}
 }
@@ -133,13 +164,34 @@ function sanitizeCandidate(candidate) {
 }
 
 /**
+ * Wait briefly for ICE candidates so they are embedded directly inside the SDP offer/answer.
+ * This guarantees rapid P2P connection even before or in parallel with Firestore trickle ICE.
+ */
+function waitForIceGathering(peerConnection, maxWaitMs = 800) {
+  return new Promise((resolve) => {
+    if (peerConnection.iceGatheringState === 'complete') {
+      resolve();
+      return;
+    }
+    const timer = setTimeout(resolve, maxWaitMs);
+    const checkState = () => {
+      if (peerConnection.iceGatheringState === 'complete') {
+        clearTimeout(timer);
+        peerConnection.removeEventListener('icegatheringstatechange', checkState);
+        resolve();
+      }
+    };
+    peerConnection.addEventListener('icegatheringstatechange', checkState);
+  });
+}
+
+/**
  * Safely add an ICE candidate to an RTCPeerConnection
  */
 async function addCandidateToPeer(peerConnection, cand) {
-  if (!cand || !cand.candidate || !peerConnection || peerConnection.signalingState === 'closed') return;
+  if (!cand || !cand.candidate || !peerConnection || peerConnection.signalingState === 'closed') return false;
   if (!peerConnection.remoteDescription || !peerConnection.remoteDescription.type) {
-    console.warn('[WebRTC] Skipping candidate - remoteDescription not set yet');
-    return;
+    return false;
   }
   try {
     const candidateInit = {
@@ -147,10 +199,12 @@ async function addCandidateToPeer(peerConnection, cand) {
       sdpMid: cand.sdpMid !== null && cand.sdpMid !== undefined ? String(cand.sdpMid) : undefined,
       sdpMLineIndex: typeof cand.sdpMLineIndex === 'number' ? cand.sdpMLineIndex : undefined
     };
-    await peerConnection.addIceCandidate(new RTCIceCandidate(candidateInit));
+    await peerConnection.addIceCandidate(candidateInit);
     console.log('[WebRTC] Added ICE candidate successfully:', candidateInit.sdpMid, candidateInit.sdpMLineIndex);
+    return true;
   } catch (err) {
     console.warn('[WebRTC] Candidate add warning:', err.message);
+    return false;
   }
 }
 
@@ -222,8 +276,17 @@ async function getLocalAudioStream() {
     });
     return stream;
   } catch (err) {
-    console.warn('Standard audio capture failed:', err);
-    throw err;
+    console.warn('Standard audio capture failed, trying fallback audio: true', err);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((t) => {
+        t.enabled = true;
+      });
+      return stream;
+    } catch (err2) {
+      console.warn('Microphone capture completely failed:', err2);
+      throw err2;
+    }
   }
 }
 
@@ -366,9 +429,10 @@ export async function initiateCall({
     }
   };
 
-  // 3. Create Offer SDP & set local description
+  // 3. Create Offer SDP, set local description & wait briefly for ICE gathering
   const offerDescription = await peerConnection.createOffer();
   await peerConnection.setLocalDescription(offerDescription);
+  await waitForIceGathering(peerConnection, 800);
 
   const localOffer = peerConnection.localDescription || offerDescription;
   const callId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -424,10 +488,12 @@ export async function initiateCall({
     if (!cand || !cand.candidate) return;
     const key = `${cand.candidate}_${cand.sdpMid}_${cand.sdpMLineIndex}`;
     if (seenAnswerCandidates.has(key)) return;
-    seenAnswerCandidates.add(key);
 
     if (isRemoteDescSet && !isSettingRemoteDesc && peerConnection.remoteDescription) {
-      await addCandidateToPeer(peerConnection, cand);
+      const added = await addCandidateToPeer(peerConnection, cand);
+      if (added) {
+        seenAnswerCandidates.add(key);
+      }
     } else {
       answerQueue.push(cand);
     }
@@ -649,9 +715,10 @@ export async function answerCall({
   await peerConnection.setRemoteDescription(new RTCSessionDescription(call.offer));
   console.log('[WebRTC] Receiver set remote description (offer) successfully');
 
-  // 4. Create Answer SDP & set local description
+  // 4. Create Answer SDP, set local description & wait briefly for ICE gathering
   const answerDescription = await peerConnection.createAnswer();
   await peerConnection.setLocalDescription(answerDescription);
+  await waitForIceGathering(peerConnection, 800);
   console.log('[WebRTC] Receiver set local description (answer) successfully');
 
   // 5. Now that local description is set, add all caller offer candidates safely
@@ -660,8 +727,10 @@ export async function answerCall({
     if (!cand || !cand.candidate) return;
     const key = `${cand.candidate}_${cand.sdpMid}_${cand.sdpMLineIndex}`;
     if (seenOfferCandidates.has(key)) return;
-    seenOfferCandidates.add(key);
-    await addCandidateToPeer(peerConnection, cand);
+    const added = await addCandidateToPeer(peerConnection, cand);
+    if (added) {
+      seenOfferCandidates.add(key);
+    }
   };
 
   if (Array.isArray(call.offerCandidates)) {
@@ -787,7 +856,7 @@ export function subscribeToIncomingCalls(userId, onIncomingCall) {
           call &&
           call.receiverId === userId &&
           call.status === 'calling' &&
-          Date.now() - (call.createdAt || 0) < 90000
+          Math.abs(Date.now() - (call.createdAt || 0)) < 120000
         ) {
           incoming = {
             ...call,
