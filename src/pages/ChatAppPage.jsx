@@ -29,6 +29,14 @@ import { ProfileSettingsModal } from '../components/settings/ProfileSettingsModa
 import { Modal } from '../components/common/Modal';
 import { IncomingCallModal } from '../components/call/IncomingCallModal';
 import { ActiveCallModal } from '../components/call/ActiveCallModal';
+import { NotificationBanner } from '../components/common/NotificationBanner';
+import {
+  initNotifications,
+  showMessageNotification,
+  showCallNotification,
+  dismissCallNotification,
+  stopTitleFlash
+} from '../services/notificationService';
 import {
   initiateCall,
   answerCall,
@@ -139,6 +147,59 @@ export function ChatAppPage() {
   const callSessionRef = React.useRef(null);
   const callConnectedAtRef = React.useRef(null);
 
+  // Initialize notification listeners
+  useEffect(() => {
+    initNotifications((data) => {
+      if (data?.conversationId) {
+        const targetConv = conversations.find((c) => c.id === data.conversationId);
+        if (targetConv) {
+          setActiveConversation(targetConv);
+          setMobileView('chat');
+        }
+      }
+    });
+  }, [conversations]);
+
+  // Real-time background message notification listener
+  const prevConvsRef = React.useRef({});
+  useEffect(() => {
+    if (!conversations || conversations.length === 0) return;
+
+    conversations.forEach((conv) => {
+      const lastMsg = conv.lastMessage;
+      if (!lastMsg) return;
+
+      const prevMsgId = prevConvsRef.current[conv.id];
+      const isDifferentMsg = prevMsgId && prevMsgId !== (lastMsg.id || lastMsg.createdAt?.seconds || lastMsg.text);
+      const isFromOtherUser = lastMsg.senderId && lastMsg.senderId !== currentUser?.uid;
+
+      if (isDifferentMsg && isFromOtherUser) {
+        const isNotActiveChat = !activeConversation || activeConversation.id !== conv.id;
+        if (document.hidden || isNotActiveChat) {
+          const targetUid = conv.participants?.find((uid) => uid !== currentUser?.uid);
+          const senderInfo = conv.participantData?.[lastMsg.senderId] || conv.participantData?.[targetUid] || {};
+          const senderName = conv.isGroup
+            ? `${lastMsg.senderName || senderInfo.displayName || 'Member'} in ${conv.groupName || 'Group'}`
+            : (lastMsg.senderName || senderInfo.displayName || senderInfo.username || 'User');
+          const senderPhoto = senderInfo.photoURL || '';
+
+          showMessageNotification({
+            senderName,
+            text: lastMsg.text,
+            icon: senderPhoto,
+            conversationId: conv.id,
+            onClick: () => {
+              setActiveConversation(conv);
+              setMobileView('chat');
+            }
+          });
+        }
+      }
+
+      prevConvsRef.current[conv.id] = lastMsg.id || lastMsg.createdAt?.seconds || lastMsg.text;
+    });
+  }, [conversations, currentUser?.uid, activeConversation]);
+
   // Subscribe to incoming calls for current user via conversations
   useEffect(() => {
     if (!currentUser?.uid) return;
@@ -146,9 +207,24 @@ export function ChatAppPage() {
       if (call) {
         if (!activeCall) {
           setIncomingCall(call);
+          // Show system desktop/mobile notification even when minimized or browser in background!
+          showCallNotification({
+            callerName: call.callerName,
+            callerPhoto: call.callerPhoto,
+            isVideo: call.type === 'video',
+            callId: call.id || call.callId,
+            onAccept: () => {
+              window.focus();
+            },
+            onDecline: () => {
+              rejectIncomingCall(call.conversationId || call.id);
+              dismissCallNotification(call.id || call.callId);
+            }
+          });
         }
       } else {
         setIncomingCall(null);
+        dismissCallNotification();
       }
     });
     return () => unsub();
@@ -156,6 +232,8 @@ export function ChatAppPage() {
 
   const cleanupCallUI = () => {
     stopRingtone();
+    dismissCallNotification();
+    stopTitleFlash();
     callConnectedAtRef.current = null;
     callSessionRef.current = null;
     setActiveCall(null);
@@ -267,6 +345,8 @@ export function ChatAppPage() {
     if (!incomingCall) return;
     const callToAnswer = incomingCall;
     setIncomingCall(null);
+    dismissCallNotification(callToAnswer.id || callToAnswer.callId);
+    stopTitleFlash();
 
     try {
       const convId = callToAnswer.conversationId || activeConversationId || getConversationId(currentUser.uid, callToAnswer.callerId);
@@ -333,6 +413,8 @@ export function ChatAppPage() {
     const callToDecline = incomingCall;
     const convId = callToDecline.conversationId || callToDecline.id;
     setIncomingCall(null);
+    dismissCallNotification(callToDecline.callId || callToDecline.id);
+    stopTitleFlash();
     await rejectIncomingCall(convId);
     logCallMessage(convId, {
       callId: callToDecline.callId || callToDecline.id,
@@ -491,6 +573,9 @@ export function ChatAppPage() {
               </button>
             </div>
           </div>
+
+          {/* Background Notification Permission Prompt Banner */}
+          <NotificationBanner />
 
           {/* Quick Search filter */}
           <div className="sidebar-search-container">
