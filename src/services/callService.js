@@ -18,8 +18,16 @@ const rtcConfig = {
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
     { urls: 'stun:stun4.l.google.com:19302' },
-    { urls: 'stun:stun.services.mozilla.com' },
-    { urls: 'stun:stun.relay.metered.ca:80' }
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    {
+      urls: [
+        'turn:openrelay.metered.ca:80',
+        'turn:openrelay.metered.ca:443',
+        'turn:openrelay.metered.ca:443?transport=tcp'
+      ],
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    }
   ],
   iceCandidatePoolSize: 10
 };
@@ -27,6 +35,34 @@ const rtcConfig = {
 // Web Audio API Ringtone Synthesizer
 let audioCtx = null;
 let ringtoneInterval = null;
+
+/**
+ * Prime and unlock audio context upon user gesture (button click)
+ * This allows incoming/received audio to play unhindered by browser autoplay policy.
+ */
+export function unlockAudio() {
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (AudioContext) {
+      const ctx = new AudioContext();
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.05);
+      setTimeout(() => {
+        try {
+          ctx.close();
+        } catch (e) {}
+      }, 500);
+    }
+  } catch (e) {}
+}
 
 export function playRingtone(type = 'incoming') {
   stopRingtone();
@@ -90,10 +126,45 @@ export function stopRingtone() {
 }
 
 /**
+ * Sanitize candidate before sending to Firestore to prevent `undefined` field errors
+ */
+function sanitizeCandidate(candidate) {
+  if (!candidate) return null;
+  const c = typeof candidate.toJSON === 'function' ? candidate.toJSON() : candidate;
+  if (!c || !c.candidate || typeof c.candidate !== 'string' || !c.candidate.trim()) {
+    return null;
+  }
+  return {
+    candidate: c.candidate,
+    sdpMid: c.sdpMid !== undefined && c.sdpMid !== null ? String(c.sdpMid) : null,
+    sdpMLineIndex: typeof c.sdpMLineIndex === 'number' ? c.sdpMLineIndex : (c.sdpMLineIndex ? Number(c.sdpMLineIndex) : 0)
+  };
+}
+
+/**
+ * Safely add an ICE candidate to an RTCPeerConnection without unhandled rejections
+ */
+function addCandidateToPeer(peerConnection, cand) {
+  if (!cand || !cand.candidate) return Promise.resolve();
+  try {
+    const candidateInit = {
+      candidate: cand.candidate,
+      sdpMid: cand.sdpMid !== null && cand.sdpMid !== undefined ? String(cand.sdpMid) : undefined,
+      sdpMLineIndex: typeof cand.sdpMLineIndex === 'number' ? cand.sdpMLineIndex : undefined
+    };
+    return peerConnection.addIceCandidate(new RTCIceCandidate(candidateInit)).catch((err) => {
+      console.warn('Candidate add ignored:', err.message);
+    });
+  } catch (e) {
+    return Promise.resolve();
+  }
+}
+
+/**
  * Wait for ICE gathering to complete or timeout.
  * Embedding gathered candidates directly in localDescription.sdp drastically speeds up P2P connection.
  */
-async function waitForIceGathering(peerConnection, maxWaitMs = 500) {
+async function waitForIceGathering(peerConnection, maxWaitMs = 1200) {
   if (peerConnection.iceGatheringState === 'complete') return;
   await new Promise((resolve) => {
     const timer = setTimeout(resolve, maxWaitMs);
@@ -128,17 +199,38 @@ export async function getLocalMediaStream(type = 'video') {
 
   if (wantsVideo) {
     try {
-      return await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: { facingMode: 'user' }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        },
+        video: {
+          facingMode: 'user',
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          frameRate: { ideal: 24 }
+        }
       });
+      stream.getTracks().forEach((t) => {
+        t.enabled = true;
+      });
+      return stream;
     } catch (videoErr) {
       console.warn('Camera with facingMode failed, trying generic video:', videoErr);
       try {
-        return await navigator.mediaDevices.getUserMedia({
-          audio: true,
+        const fallbackStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          },
           video: true
         });
+        fallbackStream.getTracks().forEach((t) => {
+          t.enabled = true;
+        });
+        return fallbackStream;
       } catch (videoErr2) {
         console.warn('Camera completely unavailable, falling back to audio-only stream:', videoErr2);
         return await getLocalAudioStream();
@@ -151,16 +243,25 @@ export async function getLocalMediaStream(type = 'video') {
 
 async function getLocalAudioStream() {
   try {
-    return await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      }
+    });
+    stream.getTracks().forEach((t) => {
+      t.enabled = true;
+    });
+    return stream;
   } catch (err) {
-    console.warn('Standard audio failed, trying with audio constraints:', err);
+    console.warn('Standard audio failed, trying basic audio constraints:', err);
     try {
-      return await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true
-        }
+      const fallbackStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      fallbackStream.getTracks().forEach((t) => {
+        t.enabled = true;
       });
+      return fallbackStream;
     } catch (err2) {
       throw err;
     }
@@ -202,8 +303,9 @@ export async function initiateCall({
   // 2. Initialize WebRTC Peer Connection
   const peerConnection = new RTCPeerConnection(rtcConfig);
 
-  // Add all local tracks
+  // Add all local tracks & ensure enabled
   localStream.getTracks().forEach((track) => {
+    track.enabled = true;
     peerConnection.addTrack(track, localStream);
   });
 
@@ -219,16 +321,21 @@ export async function initiateCall({
     stopRingtone();
     if (event.streams && event.streams[0]) {
       event.streams[0].getTracks().forEach((track) => {
+        track.enabled = true;
         if (!remoteStream.getTracks().some((t) => t.id === track.id)) {
           remoteStream.addTrack(track);
         }
       });
     } else if (event.track) {
+      event.track.enabled = true;
       if (!remoteStream.getTracks().some((t) => t.id === event.track.id)) {
         remoteStream.addTrack(event.track);
       }
     }
-    if (onRemoteStream) onRemoteStream(remoteStream);
+    // Emit a fresh MediaStream copy so React state change triggers re-render and attaches tracks
+    if (onRemoteStream) {
+      onRemoteStream(new MediaStream(remoteStream.getTracks()));
+    }
   };
 
   peerConnection.onconnectionstatechange = () => {
@@ -269,11 +376,9 @@ export async function initiateCall({
 
   peerConnection.onicecandidate = (event) => {
     if (event.candidate) {
-      const candObj = {
-        candidate: event.candidate.candidate,
-        sdpMid: event.candidate.sdpMid,
-        sdpMLineIndex: event.candidate.sdpMLineIndex
-      };
+      const candObj = sanitizeCandidate(event.candidate);
+      if (!candObj) return;
+
       if (!isDocInitialized) {
         earlyCandidates.push(candObj);
       } else {
@@ -288,10 +393,10 @@ export async function initiateCall({
     }
   };
 
-  // 3. Create Offer SDP & wait briefly for ICE gathering
+  // 3. Create Offer SDP & wait for ICE gathering
   const offerDescription = await peerConnection.createOffer();
   await peerConnection.setLocalDescription(offerDescription);
-  await waitForIceGathering(peerConnection, 500);
+  await waitForIceGathering(peerConnection, 1200);
 
   const localOffer = peerConnection.localDescription || offerDescription;
   const callId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -371,9 +476,7 @@ export async function initiateCall({
         // Flush any queued answer candidates
         while (answerQueue.length > 0) {
           const cand = answerQueue.shift();
-          try {
-            await peerConnection.addIceCandidate(new RTCIceCandidate(cand));
-          } catch (e) {}
+          addCandidateToPeer(peerConnection, cand);
         }
       } catch (err) {
         console.warn('Set remote description error on caller:', err);
@@ -387,11 +490,7 @@ export async function initiateCall({
         if (!seenAnswerCandidates.has(key)) {
           seenAnswerCandidates.add(key);
           if (isRemoteDescSet && peerConnection.remoteDescription) {
-            try {
-              await peerConnection.addIceCandidate(new RTCIceCandidate(cand));
-            } catch (e) {
-              console.warn('Error adding answer ICE candidate:', e);
-            }
+            addCandidateToPeer(peerConnection, cand);
           } else {
             answerQueue.push(cand);
           }
@@ -445,6 +544,7 @@ export async function answerCall({
   conversationId,
   call,
   onRemoteStream,
+  onCallActive,
   onCallEnded
 }) {
   if (!isFirebaseConfigured || !db) {
@@ -463,6 +563,7 @@ export async function answerCall({
   const peerConnection = new RTCPeerConnection(rtcConfig);
 
   localStream.getTracks().forEach((track) => {
+    track.enabled = true;
     peerConnection.addTrack(track, localStream);
   });
 
@@ -477,16 +578,38 @@ export async function answerCall({
   peerConnection.ontrack = (event) => {
     if (event.streams && event.streams[0]) {
       event.streams[0].getTracks().forEach((track) => {
+        track.enabled = true;
         if (!remoteStream.getTracks().some((t) => t.id === track.id)) {
           remoteStream.addTrack(track);
         }
       });
     } else if (event.track) {
+      event.track.enabled = true;
       if (!remoteStream.getTracks().some((t) => t.id === event.track.id)) {
         remoteStream.addTrack(event.track);
       }
     }
-    if (onRemoteStream) onRemoteStream(remoteStream);
+    // Emit a fresh MediaStream copy so React state change triggers re-render and attaches tracks
+    if (onRemoteStream) {
+      onRemoteStream(new MediaStream(remoteStream.getTracks()));
+    }
+  };
+
+  peerConnection.onconnectionstatechange = () => {
+    if (peerConnection.connectionState === 'connected') {
+      stopRingtone();
+      if (onCallActive) onCallActive();
+    }
+  };
+
+  peerConnection.oniceconnectionstatechange = () => {
+    if (
+      peerConnection.iceConnectionState === 'connected' ||
+      peerConnection.iceConnectionState === 'completed'
+    ) {
+      stopRingtone();
+      if (onCallActive) onCallActive();
+    }
   };
 
   // Buffer and flush answer ICE candidates
@@ -510,11 +633,9 @@ export async function answerCall({
 
   peerConnection.onicecandidate = (event) => {
     if (event.candidate) {
-      const candObj = {
-        candidate: event.candidate.candidate,
-        sdpMid: event.candidate.sdpMid,
-        sdpMLineIndex: event.candidate.sdpMLineIndex
-      };
+      const candObj = sanitizeCandidate(event.candidate);
+      if (!candObj) return;
+
       if (!isAnswerSaved) {
         earlyAnswerCandidates.push(candObj);
       } else {
@@ -539,17 +660,15 @@ export async function answerCall({
       const key = `${cand.candidate}_${cand.sdpMid}_${cand.sdpMLineIndex}`;
       if (!seenOfferCandidates.has(key)) {
         seenOfferCandidates.add(key);
-        try {
-          await peerConnection.addIceCandidate(new RTCIceCandidate(cand));
-        } catch (e) {}
+        addCandidateToPeer(peerConnection, cand);
       }
     }
   }
 
-  // 4. Create Answer SDP, set local description & wait briefly for ICE gathering
+  // 4. Create Answer SDP, set local description & wait for ICE gathering
   const answerDescription = await peerConnection.createAnswer();
   await peerConnection.setLocalDescription(answerDescription);
-  await waitForIceGathering(peerConnection, 500);
+  await waitForIceGathering(peerConnection, 1200);
 
   const localAnswer = peerConnection.localDescription || answerDescription;
 
@@ -589,9 +708,7 @@ export async function answerCall({
         const key = `${cand.candidate}_${cand.sdpMid}_${cand.sdpMLineIndex}`;
         if (!seenOfferCandidates.has(key)) {
           seenOfferCandidates.add(key);
-          try {
-            peerConnection.addIceCandidate(new RTCIceCandidate(cand));
-          } catch (e) {}
+          addCandidateToPeer(peerConnection, cand);
         }
       }
     }

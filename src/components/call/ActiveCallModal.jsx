@@ -13,10 +13,35 @@ export function ActiveCallModal({
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [duration, setDuration] = useState(0);
   const [audioBlocked, setAudioBlocked] = useState(false);
+  const [remoteTracksCount, setRemoteTracksCount] = useState(0);
 
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const remoteAudioRef = useRef(null);
+
+  // Monitor incoming tracks so video and audio updates trigger immediately
+  useEffect(() => {
+    if (!remoteStream) return;
+
+    const updateTracks = () => {
+      setRemoteTracksCount(remoteStream.getTracks().length);
+    };
+
+    updateTracks();
+    remoteStream.addEventListener('addtrack', updateTracks);
+    remoteStream.addEventListener('removetrack', updateTracks);
+
+    remoteStream.getTracks().forEach((track) => {
+      track.addEventListener('unmute', updateTracks);
+      track.addEventListener('mute', updateTracks);
+      track.addEventListener('ended', updateTracks);
+    });
+
+    return () => {
+      remoteStream.removeEventListener('addtrack', updateTracks);
+      remoteStream.removeEventListener('removetrack', updateTracks);
+    };
+  }, [remoteStream]);
 
   // Callback ref for remote video to guarantee srcObject is attached the instant it mounts in DOM
   const setRemoteVideoRef = (element) => {
@@ -26,8 +51,7 @@ export function ActiveCallModal({
         element.srcObject = remoteStream;
       }
       element.play().catch((err) => {
-        console.warn('Remote video autoplay blocked:', err);
-        setAudioBlocked(true);
+        console.warn('Remote video play error:', err);
       });
     }
   };
@@ -36,6 +60,8 @@ export function ActiveCallModal({
   const setRemoteAudioRef = (element) => {
     remoteAudioRef.current = element;
     if (element && remoteStream) {
+      element.volume = 1.0;
+      element.muted = false;
       if (element.srcObject !== remoteStream) {
         element.srcObject = remoteStream;
       }
@@ -57,19 +83,25 @@ export function ActiveCallModal({
     }
   };
 
-  // Synchronize when remoteStream reference changes
+  // Synchronize when remoteStream or tracks change
   useEffect(() => {
     if (remoteStream) {
       if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = remoteStream;
-        remoteVideoRef.current.play().catch(() => setAudioBlocked(true));
+        if (remoteVideoRef.current.srcObject !== remoteStream) {
+          remoteVideoRef.current.srcObject = remoteStream;
+        }
+        remoteVideoRef.current.play().catch(() => {});
       }
       if (remoteAudioRef.current) {
-        remoteAudioRef.current.srcObject = remoteStream;
+        remoteAudioRef.current.volume = 1.0;
+        remoteAudioRef.current.muted = false;
+        if (remoteAudioRef.current.srcObject !== remoteStream) {
+          remoteAudioRef.current.srcObject = remoteStream;
+        }
         remoteAudioRef.current.play().catch(() => setAudioBlocked(true));
       }
     }
-  }, [remoteStream]);
+  }, [remoteStream, remoteTracksCount]);
 
   // Synchronize when localStream changes
   useEffect(() => {
@@ -95,11 +127,13 @@ export function ActiveCallModal({
   // User gesture handler to unlock mobile audio autoplay if blocked by browser
   const handleUnlockAudio = () => {
     setAudioBlocked(false);
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.volume = 1.0;
+      remoteAudioRef.current.muted = false;
+      remoteAudioRef.current.play().catch(() => {});
+    }
     if (remoteVideoRef.current) {
       remoteVideoRef.current.play().catch(() => {});
-    }
-    if (remoteAudioRef.current) {
-      remoteAudioRef.current.play().catch(() => {});
     }
   };
 
@@ -135,7 +169,10 @@ export function ActiveCallModal({
 
   // Check if remote stream has active video track
   const hasRemoteVideoTrack = Boolean(
-    remoteStream && remoteStream.getVideoTracks && remoteStream.getVideoTracks().length > 0 && remoteStream.getVideoTracks()[0].enabled
+    remoteStream &&
+      remoteStream.getVideoTracks &&
+      remoteStream.getVideoTracks().length > 0 &&
+      remoteStream.getVideoTracks().some((t) => t.enabled)
   );
 
   return (
@@ -192,11 +229,12 @@ export function ActiveCallModal({
         {isVideoCall ? (
           /* Video Call Stage */
           <div className="call-video-stage">
-            {/* Remote video element - ALWAYS rendered so ref never misses attachment */}
+            {/* Remote video element - muted so browser autoplay policy never suppresses video stream */}
             <video
               ref={setRemoteVideoRef}
               autoPlay
               playsInline
+              muted
               className="remote-video"
               style={{
                 display: hasRemoteVideoTrack ? 'block' : 'none',

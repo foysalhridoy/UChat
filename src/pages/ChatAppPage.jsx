@@ -42,7 +42,8 @@ import {
   answerCall,
   rejectIncomingCall,
   subscribeToIncomingCalls,
-  stopRingtone
+  stopRingtone,
+  unlockAudio
 } from '../services/callService';
 import { getOrCreateConversation, getConversationId } from '../services/conversationService';
 import {
@@ -243,6 +244,7 @@ export function ChatAppPage() {
   };
 
   const handleStartCall = async (target, type = 'audio') => {
+    unlockAudio();
     const otherUid = target?.uid || target?.id || targetUid;
     if (!currentUser || !otherUid) {
       setCallError('Could not identify recipient for the call.');
@@ -343,6 +345,7 @@ export function ChatAppPage() {
 
   const handleAcceptIncomingCall = async () => {
     if (!incomingCall) return;
+    unlockAudio();
     const callToAnswer = incomingCall;
     setIncomingCall(null);
     dismissCallNotification(callToAnswer.id || callToAnswer.callId);
@@ -369,6 +372,12 @@ export function ChatAppPage() {
         call: { ...callToAnswer, conversationId: convId },
         onRemoteStream: (stream) => {
           setCallRemoteStream(stream);
+          setCallStatus('connected');
+          if (!callConnectedAtRef.current) {
+            callConnectedAtRef.current = Date.now();
+          }
+        },
+        onCallActive: () => {
           setCallStatus('connected');
           if (!callConnectedAtRef.current) {
             callConnectedAtRef.current = Date.now();

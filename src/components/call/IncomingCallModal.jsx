@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { Phone, PhoneOff, Video, ShieldCheck } from 'lucide-react';
 import { Avatar } from '../common/Avatar';
-import { playRingtone, stopRingtone } from '../../services/callService';
+import { playRingtone, stopRingtone, unlockAudio } from '../../services/callService';
 
 export function IncomingCallModal({ call, onAccept, onDecline }) {
   useEffect(() => {
@@ -14,6 +14,11 @@ export function IncomingCallModal({ call, onAccept, onDecline }) {
   if (!call) return null;
 
   const isVideo = call.type === 'video';
+
+  const handleAccept = () => {
+    unlockAudio();
+    if (onAccept) onAccept();
+  };
 
   return (
     <div className="call-overlay" role="dialog" aria-modal="true" aria-label="Incoming Call">
@@ -61,7 +66,7 @@ export function IncomingCallModal({ call, onAccept, onDecline }) {
           {/* Accept */}
           <div className="call-action-group">
             <button
-              onClick={onAccept}
+              onClick={handleAccept}
               className="call-action-circle-btn accept"
               title="Accept call"
               aria-label="Accept call"

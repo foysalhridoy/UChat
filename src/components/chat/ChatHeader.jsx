@@ -4,6 +4,7 @@ import { Avatar } from '../common/Avatar';
 import { subscribeUserProfile, getUserProfile } from '../../services/userService';
 import { formatLastSeen } from '../../utils/formatting';
 import { useToast } from '../../context/ToastContext';
+import { unlockAudio } from '../../services/callService';
 
 export function ChatHeader({
   targetUser,
@@ -115,6 +116,7 @@ export function ChatHeader({
       <div className="chat-header-actions">
         <button
           onClick={() => {
+            unlockAudio();
             if (isGroup) {
               onStartCall && onStartCall(conversation, 'audio');
             } else {
@@ -131,6 +133,7 @@ export function ChatHeader({
 
         <button
           onClick={() => {
+            unlockAudio();
             if (isGroup) {
               onStartCall && onStartCall(conversation, 'video');
             } else {
