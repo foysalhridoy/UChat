@@ -1,6 +1,11 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthState, logoutUser } from '../services/authService';
-import { subscribeUserProfile, setUserPresence, updateUserProfile } from '../services/userService';
+import {
+  subscribeUserProfile,
+  setUserPresence,
+  updateUserProfile,
+  ensureUserProfile
+} from '../services/userService';
 import { isFirebaseConfigured } from '../services/firebase';
 
 const AuthContext = createContext();
@@ -32,7 +37,8 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     if (!currentUser) return;
 
-    // Set online presence on initial mount
+    // Ensure user profile document exists in Firestore and set online presence
+    ensureUserProfile(currentUser).catch(() => {});
     setUserPresence(currentUser.uid, 'online');
 
     const unsubscribeProfile = subscribeUserProfile(currentUser.uid, (profile) => {

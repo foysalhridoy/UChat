@@ -1,6 +1,7 @@
 import {
   doc,
   getDoc,
+  setDoc,
   updateDoc,
   onSnapshot,
   collection,
@@ -112,16 +113,51 @@ export async function updateUserProfile(userId, { displayName, photoURL }) {
 }
 
 /**
+ * Ensures user profile exists in Firestore (creates fallback profile if missing)
+ */
+export async function ensureUserProfile(user, fallbackUsername = '') {
+  if (!isFirebaseConfigured || !db || !user?.uid) return null;
+  const userRef = doc(db, 'users', user.uid);
+  try {
+    const snap = await getDoc(userRef);
+    if (!snap.exists()) {
+      const cleanUsername = fallbackUsername || user.displayName || user.email?.split('@')[0] || `user_${user.uid.slice(0, 5)}`;
+      const profileData = {
+        uid: user.uid,
+        username: cleanUsername,
+        usernameLowercase: cleanUsername.toLowerCase(),
+        displayName: user.displayName || cleanUsername,
+        email: user.email || '',
+        photoURL: user.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${cleanUsername}`,
+        status: 'online',
+        lastSeen: serverTimestamp(),
+        createdAt: serverTimestamp()
+      };
+      await setDoc(userRef, profileData, { merge: true });
+      return profileData;
+    }
+    return snap.data();
+  } catch (err) {
+    console.warn('ensureUserProfile non-fatal warning:', err);
+    return null;
+  }
+}
+
+/**
  * Update user presence (online/offline)
  */
 export async function setUserPresence(userId, status) {
   if (!isFirebaseConfigured || !db || !userId) return;
   try {
     const userRef = doc(db, 'users', userId);
-    await updateDoc(userRef, {
-      status: status === 'online' ? 'online' : 'offline',
-      lastSeen: serverTimestamp()
-    });
+    await setDoc(
+      userRef,
+      {
+        status: status === 'online' ? 'online' : 'offline',
+        lastSeen: serverTimestamp()
+      },
+      { merge: true }
+    );
   } catch (err) {
     // Non-critical, ignore if user is already logged out or connection dropped
   }

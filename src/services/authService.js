@@ -30,6 +30,12 @@ export function usernameToEmail(cleanUsername) {
 export function getFriendlyErrorMessage(error) {
   if (!error) return 'An unexpected error occurred';
   const code = error.code || '';
+  const msg = error.message || '';
+
+  if (code === 'permission-denied' || msg.includes('Missing or insufficient permissions')) {
+    return 'Permission denied by Firestore rules. Please update the security rules in your Firebase Console.';
+  }
+
   switch (code) {
     case 'auth/email-already-in-use':
       return 'This username is already taken. Please choose another.';
@@ -55,11 +61,11 @@ export function getFriendlyErrorMessage(error) {
 }
 
 /**
- * Checks if a username is available
+ * Checks if a username is available (non-blocking if unauthenticated Firestore read is restricted)
  */
 export async function checkUsernameAvailability(username) {
   if (!isFirebaseConfigured || !db) {
-    throw new Error('Firebase is not configured. Please add your credentials.');
+    return { available: true };
   }
 
   const clean = sanitizeUsername(username);
@@ -72,8 +78,9 @@ export async function checkUsernameAvailability(username) {
     const snap = await getDoc(usernameDocRef);
     return { available: !snap.exists(), clean };
   } catch (err) {
-    console.error('Error checking username:', err);
-    throw err;
+    // If rules in Firebase Console require authentication for read, do not crash!
+    // Firebase Auth and the authenticated transaction will guarantee uniqueness on submit.
+    return { available: true, clean };
   }
 }
 
@@ -95,10 +102,17 @@ export async function registerUser({ username, password, displayName, email }) {
     throw new Error(passCheck.message);
   }
 
-  // Pre-check username availability in Firestore
-  const availability = await checkUsernameAvailability(cleanUsername);
-  if (!availability.available) {
-    throw new Error('This username is already taken. Please choose another.');
+  // Safe pre-check: only block if explicitly confirmed taken
+  try {
+    const availability = await checkUsernameAvailability(cleanUsername);
+    if (availability && availability.available === false && !availability.error) {
+      throw new Error('This username is already taken. Please choose another.');
+    }
+  } catch (err) {
+    if (err.message && err.message.includes('already taken')) {
+      throw err;
+    }
+    // Continue: Firebase Auth will guarantee uniqueness on createUserWithEmailAndPassword
   }
 
   // If user provided a real email, validate and use it; otherwise generate internal unique email from username
@@ -111,7 +125,7 @@ export async function registerUser({ username, password, displayName, email }) {
   // Verify username availability and claim atomically via transaction
   const usernameRef = doc(db, 'usernames', cleanUsername);
 
-  // 1. Create auth user
+  // 1. Create auth user (Firebase Auth immediately enforces email uniqueness)
   const userCredential = await createUserWithEmailAndPassword(auth, authEmail, password);
   const user = userCredential.user;
 
@@ -121,11 +135,11 @@ export async function registerUser({ username, password, displayName, email }) {
       displayName: resolvedDisplayName
     });
 
-    // 3. Atomically reserve username and create user document
+    // 3. Atomically reserve username and create user document (now authenticated)
     await runTransaction(db, async (transaction) => {
       const usernameDoc = await transaction.get(usernameRef);
       if (usernameDoc.exists()) {
-        throw new Error('Username has just been taken by another user.');
+        throw new Error('This username has already been taken by another user.');
       }
 
       // Claim username
@@ -194,9 +208,8 @@ export async function loginUser(identifier, password) {
         if (snap.exists() && snap.data()?.email) {
           resolvedEmail = snap.data().email;
         }
-      } catch (e) {
-        // If lookup fails (e.g. network/rules), fallback to default usernameToEmail
-        console.warn('Username email lookup fallback:', e);
+      } catch {
+        // Silently fallback to usernameToEmail without throwing unhandled permission errors
       }
     }
   }

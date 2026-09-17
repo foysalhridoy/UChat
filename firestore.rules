@@ -19,11 +19,13 @@ service cloud.firestore {
       allow create, update, delete: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
     }
 
-    // Conversations: handles non-existent doc check via resource == null
+    // Conversations (1-to-1 chats and groups)
     match /conversations/{conversationId} {
-      allow read: if isAuthenticated() && (resource == null || request.auth.uid in resource.data.participants);
-      allow create, update: if isAuthenticated();
-      allow delete: if false;
+      allow get: if isAuthenticated() && (resource == null || request.auth.uid in resource.data.participants);
+      allow list: if isAuthenticated() && request.auth.uid in resource.data.participants;
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (resource == null || request.auth.uid in resource.data.participants);
+      allow delete: if isAuthenticated();
 
       // Messages subcollection
       match /messages/{messageId} {
